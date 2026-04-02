@@ -19,6 +19,7 @@ URL_HOMEASSISTANT="${URL_HOMEASSISTANT:-http://homeassistant:8123}"
 
 DISPLAY_PROFILE="${DISPLAY_PROFILE:-touch7-legacy}"    # touch2 | touch7-legacy
 DISPLAY_CONNECTOR="${DISPLAY_CONNECTOR:-auto}"  # auto | DSI-1 | DSI-2 | HDMI-A-1 ...
+DSI_PORT="${DSI_PORT:-dsi0}"                    # dsi0 | dsi1 (boot overlay port)
 ROTATION="${ROTATION:-auto}"                    # auto | normal | 90 | 180 | 270
 
 HIDE_CURSOR="${HIDE_CURSOR:-yes}"               # yes | no
@@ -49,10 +50,24 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "Required command not found: $1"
 }
 
-append_if_missing() {
+set_or_append_cfg() {
   local file="$1"
-  local text="$2"
-  grep -Fq "$text" "$file" 2>/dev/null || echo "$text" | sudo tee -a "$file" >/dev/null
+  local key="$2"
+  local value="$3"
+
+  if grep -qE "^\s*#?\s*${key}=" "$file"; then
+    sudo sed -i "s|^\s*#\?\s*${key}=.*|${key}=${value}|" "$file"
+  else
+    echo "${key}=${value}" | sudo tee -a "$file" >/dev/null
+  fi
+}
+
+remove_cfg_lines() {
+  local file="$1"
+  shift
+  for pattern in "$@"; do
+    sudo sed -i "\|${pattern}|d" "$file"
+  done
 }
 
 #######################################
@@ -95,36 +110,27 @@ fi
 [ "$SUPPORTED" -eq 1 ] || fail "This script supports Raspberry Pi OS / Debian-based systems only."
 
 case "$OS_CODENAME" in
-  bookworm|trixie)
-    ;;
-  *)
-    warn "This release is not explicitly tested. Continuing anyway."
-    ;;
+  bookworm|trixie) ;;
+  *) warn "This release is not explicitly tested. Continuing anyway." ;;
 esac
 
 #######################################
 # Resolve mode, display, rotation
 #######################################
 case "$APP_MODE" in
-  codesys)
-    TARGET_URL="$URL_CODESYS"
-    ;;
-  homeassistant)
-    TARGET_URL="$URL_HOMEASSISTANT"
-    ;;
-  *)
-    fail "Unsupported APP_MODE: $APP_MODE"
-    ;;
+  codesys) TARGET_URL="$URL_CODESYS" ;;
+  homeassistant) TARGET_URL="$URL_HOMEASSISTANT" ;;
+  *) fail "Unsupported APP_MODE: $APP_MODE" ;;
 esac
 
 case "$DISPLAY_PROFILE" in
   touch2)
     DISPLAY_MODE="720x1280"
-    DEFAULT_ROTATION="90"      # landscape result from portrait-native panel
+    DEFAULT_ROTATION="90"
     ;;
   touch7-legacy)
     DISPLAY_MODE="800x480"
-    DEFAULT_ROTATION="normal"  # already landscape-native
+    DEFAULT_ROTATION="normal"
     ;;
   *)
     fail "Unsupported DISPLAY_PROFILE: $DISPLAY_PROFILE"
@@ -132,15 +138,14 @@ case "$DISPLAY_PROFILE" in
 esac
 
 case "$ROTATION" in
-  auto)
-    EFFECTIVE_ROTATION="$DEFAULT_ROTATION"
-    ;;
-  normal|90|180|270)
-    EFFECTIVE_ROTATION="$ROTATION"
-    ;;
-  *)
-    fail "Unsupported ROTATION: $ROTATION"
-    ;;
+  auto) EFFECTIVE_ROTATION="$DEFAULT_ROTATION" ;;
+  normal|90|180|270) EFFECTIVE_ROTATION="$ROTATION" ;;
+  *) fail "Unsupported ROTATION: $ROTATION" ;;
+esac
+
+case "$DSI_PORT" in
+  dsi0|dsi1) ;;
+  *) fail "Unsupported DSI_PORT: $DSI_PORT" ;;
 esac
 
 #######################################
@@ -150,6 +155,7 @@ export DEBIAN_FRONTEND=noninteractive
 export NEEDRESTART_MODE=a
 APT_OPTS=(
   "-y"
+  "-q"
   "-o" "Dpkg::Options::=--force-confdef"
   "-o" "Dpkg::Options::=--force-confold"
 )
@@ -163,13 +169,15 @@ log "Display profile: $DISPLAY_PROFILE"
 log "Display mode: $DISPLAY_MODE"
 log "Rotation: $EFFECTIVE_ROTATION"
 log "Display connector: $DISPLAY_CONNECTOR"
+log "DSI port: $DSI_PORT"
 
 if [ "$RUN_UPDATE_UPGRADE" = "yes" ]; then
   log "Updating package lists"
   sudo apt update
 
-  log "Upgrading installed packages (noninteractive)"
-  sudo apt upgrade "${APT_OPTS[@]}"
+  log "Upgrading installed packages (fully noninteractive)"
+  sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
+    apt upgrade "${APT_OPTS[@]}"
 fi
 
 #######################################
@@ -185,7 +193,8 @@ else
 fi
 
 log "Installing required packages"
-sudo apt install --no-install-recommends "${APT_OPTS[@]}" \
+sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
+  apt install --no-install-recommends "${APT_OPTS[@]}" \
   labwc \
   greetd \
   seatd \
@@ -201,19 +210,36 @@ CHROMIUM_BIN="$(command -v chromium || command -v chromium-browser || true)"
 #######################################
 # Basic system config
 #######################################
-log "Enabling I2C in config.txt"
+log "Configuring boot display settings"
 CONFIG_TXT="/boot/firmware/config.txt"
 if [ -f "$CONFIG_TXT" ]; then
-  if grep -qE '^\s*#?\s*dtparam=i2c_arm=' "$CONFIG_TXT"; then
-    sudo sed -i 's/^\s*#\?\s*dtparam=i2c_arm=.*/dtparam=i2c_arm=on/' "$CONFIG_TXT"
-  else
-    echo "dtparam=i2c_arm=on" | sudo tee -a "$CONFIG_TXT" >/dev/null
+  set_or_append_cfg "$CONFIG_TXT" "dtparam=i2c_arm" "on"
+
+  if grep -qE '^\s*#?\s*dtoverlay=vc4-kms-v3d' "$CONFIG_TXT"; then
+    sudo sed -i 's/^\s*#\?\s*dtoverlay=vc4-kms-v3d.*/dtoverlay=vc4-kms-v3d/' "$CONFIG_TXT"
+  elif ! grep -qE '^\s*dtoverlay=vc4-kms-v3d' "$CONFIG_TXT"; then
+    echo "dtoverlay=vc4-kms-v3d" | sudo tee -a "$CONFIG_TXT" >/dev/null
   fi
 
-  if grep -qE '^\s*#?\s*display_auto_detect=' "$CONFIG_TXT"; then
-    sudo sed -i 's/^\s*#\?\s*display_auto_detect=.*/display_auto_detect=1/' "$CONFIG_TXT"
-  else
-    echo "display_auto_detect=1" | sudo tee -a "$CONFIG_TXT" >/dev/null
+  if [ "$DISPLAY_PROFILE" = "touch7-legacy" ]; then
+    log "Configuring legacy 7-inch DSI display overlay for $DSI_PORT"
+
+    set_or_append_cfg "$CONFIG_TXT" "display_auto_detect" "0"
+
+    remove_cfg_lines "$CONFIG_TXT" \
+      '^\s*dtoverlay=vc4-kms-dsi-7inch' \
+      '^\s*dtoverlay=vc4-kms-dsi-ili9881-5inch' \
+      '^\s*dtoverlay=vc4-kms-dsi-ili9881-7inch'
+
+    echo "dtoverlay=vc4-kms-dsi-7inch,$DSI_PORT" | sudo tee -a "$CONFIG_TXT" >/dev/null
+
+  elif [ "$DISPLAY_PROFILE" = "touch2" ]; then
+    log "Configuring Touch Display 2 using auto-detect"
+
+    set_or_append_cfg "$CONFIG_TXT" "display_auto_detect" "1"
+
+    remove_cfg_lines "$CONFIG_TXT" \
+      '^\s*dtoverlay=vc4-kms-dsi-7inch'
   fi
 else
   warn "$CONFIG_TXT not found; skipping boot display config."
@@ -402,4 +428,5 @@ echo "  Display profile:   $DISPLAY_PROFILE"
 echo "  Display mode:      $DISPLAY_MODE"
 echo "  Rotation:          $EFFECTIVE_ROTATION"
 echo "  Connector:         $DISPLAY_CONNECTOR"
+echo "  DSI port:          $DSI_PORT"
 echo "  Splash:            $INSTALL_SPLASH"
