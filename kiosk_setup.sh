@@ -17,7 +17,7 @@ APP_MODE="${APP_MODE:-codesys}"                  # codesys | homeassistant
 URL_CODESYS="${URL_CODESYS:-http://localhost:8080/webvisu.htm}"
 URL_HOMEASSISTANT="${URL_HOMEASSISTANT:-http://homeassistant:8123}"
 
-DISPLAY_PROFILE="${DISPLAY_PROFILE:-touch2}"    # touch2 | touch7-legacy
+DISPLAY_PROFILE="${DISPLAY_PROFILE:-touch7-legacy}"    # touch2 | touch7-legacy
 DISPLAY_CONNECTOR="${DISPLAY_CONNECTOR:-auto}"  # auto | DSI-1 | DSI-2 | HDMI-A-1 ...
 ROTATION="${ROTATION:-auto}"                    # auto | normal | 90 | 180 | 270
 
