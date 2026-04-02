@@ -13,6 +13,9 @@ The goal is to provide an easy-to-use kiosk setup for official Raspberry Pi touc
 
 We welcome feedback, suggestions, and pull requests.
 
+
+bash <(curl -fsSL https://raw.githubusercontent.com/telemetry-digital/kiosk_setup_raspberry/main/install.sh)
+
 ---
 
 ## 🚀 Features
