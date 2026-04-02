@@ -1,50 +1,62 @@
-# kiosk_setup_raspberry
+# Raspberry Pi Kiosk Setup
 
-Simple kiosk setup for **Raspberry Pi OS Lite (Raspbian Lite)** and **official Raspberry Pi touch displays**.
+Welcome to the **Raspberry Pi Kiosk Setup** project.
 
-This project helps you quickly prepare a Raspberry Pi kiosk system for:
+This project provides a simple way to turn a Raspberry Pi running **Raspberry Pi OS Lite** into a touchscreen kiosk using **labwc** (Wayland compositor) and **Chromium** in full-screen kiosk mode.
+
+It is designed mainly for:
 
 - **CODESYS WebVisu**
 - **Home Assistant**
 
-After running the script, the Raspberry Pi will be configured to automatically start a browser in kiosk mode after boot.
+The goal is to provide an easy-to-use kiosk setup for official Raspberry Pi touch displays, with automatic browser startup, hidden cursor, splash screen support, and minimal manual configuration.
+
+We welcome feedback, suggestions, and pull requests.
 
 ---
 
-# What this project does
+## 🚀 Features
 
-The script automatically:
-
-- updates the system
-- upgrades installed packages
-- installs the required kiosk packages
-- configures kiosk mode
-- configures automatic startup after boot
-- hides the mouse cursor
-- configures the display
-- installs a splash screen
-- opens the selected web address in Chromium
-
----
-
-# Supported systems
-
-This project is intended for:
-
-- **Raspberry Pi OS Lite**
-- **Raspbian Lite**
-- Raspberry Pi 4
-- Raspberry Pi 5
-- Compute Module based setups
-- official Raspberry Pi touch displays only
+- Designed for **Raspberry Pi OS Lite**
+- Works with **Raspberry Pi 4**, **Raspberry Pi 5**, and **Compute Module based setups**
+- Uses **Wayland** with **labwc**
+- Starts **Chromium in kiosk mode**
+- Supports **CODESYS WebVisu**
+- Supports **Home Assistant**
+- Supports **official Raspberry Pi displays only**
+- Supports display rotation
+- Supports automatic display connector detection
+- Hides mouse cursor in kiosk mode
+- Supports custom splash screen using `splash_tt.png`
+- Configures automatic startup after boot
+- No installation questions during script execution
+- Simple one-line install method using `curl`
 
 ---
 
-# Supported kiosk targets
+## 📋 Requirements
 
-## 1. CODESYS
+Before using this project, make sure you have:
 
-Default address:
+- a **fresh installation of Raspberry Pi OS Lite**
+- internet connection
+- a regular user account with `sudo` privileges
+- an **official Raspberry Pi display**
+- Raspberry Pi 4, Raspberry Pi 5, or Compute Module based hardware
 
-```text
-http://localhost:8080/webvisu.htm
+Supported display profiles:
+
+- `touch2` – for official Raspberry Pi Touch Display 2
+- `touch7-legacy` – for the older official 7-inch Raspberry Pi Touch Display
+
+---
+
+## ⚠️ Important: Update and Upgrade First
+
+Before running the kiosk installation script, it is strongly recommended to manually update and upgrade the system first.
+
+Run these commands:
+
+```bash
+sudo apt update
+sudo apt upgrade -y
