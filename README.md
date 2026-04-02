@@ -1,58 +1,50 @@
-# Raspberry Pi Lite Kiosk Setup
+# kiosk_setup_raspberry
 
-Minimal kiosk setup for **Raspberry Pi OS Lite** with **official Raspberry Pi touch displays**.
+Simple kiosk setup for **Raspberry Pi OS Lite (Raspbian Lite)** and **official Raspberry Pi touch displays**.
+
+This project helps you quickly prepare a Raspberry Pi kiosk system for:
+
+- **CODESYS WebVisu**
+- **Home Assistant**
+
+After running the script, the Raspberry Pi will be configured to automatically start a browser in kiosk mode after boot.
+
+---
+
+# What this project does
+
+The script automatically:
+
+- updates the system
+- upgrades installed packages
+- installs the required kiosk packages
+- configures kiosk mode
+- configures automatic startup after boot
+- hides the mouse cursor
+- configures the display
+- installs a splash screen
+- opens the selected web address in Chromium
+
+---
+
+# Supported systems
 
 This project is intended for:
 
+- **Raspberry Pi OS Lite**
+- **Raspbian Lite**
 - Raspberry Pi 4
 - Raspberry Pi 5
 - Compute Module based setups
-- CODESYS WebVisu
-- Home Assistant
-
-The script installs a minimal kiosk environment based on:
-
-- `labwc`
-- `greetd`
-- `seatd`
-- `wlr-randr`
-- `wtype`
-- `plymouth`
-- `plymouth-themes`
-- `chromium` or `chromium-browser`
-
-It is designed to run in a **noninteractive** way:
-- no installation questions
-- automatic `apt update`
-- automatic `apt upgrade -y`
-- automatic package installation and kiosk setup
+- official Raspberry Pi touch displays only
 
 ---
 
-## Supported display profiles
+# Supported kiosk targets
 
-This repository supports **official Raspberry Pi displays only**.
+## 1. CODESYS
 
-### `touch2`
-For **Raspberry Pi Touch Display 2** panels.
-
-- Resolution: `720x1280`
-- Default result in this project: **landscape**
-
-### `touch7-legacy`
-For the older official **7-inch Raspberry Pi Touch Display**.
-
-- Resolution: `800x480`
-- Default result in this project: **landscape**
-
----
-
-## Supported application modes
-
-The script supports two kiosk targets:
-
-### `codesys`
-Default URL:
+Default address:
 
 ```text
 http://localhost:8080/webvisu.htm
