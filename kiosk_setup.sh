@@ -38,6 +38,28 @@ if [ -z "${TMUX:-}" ] && [ -z "${KIOSK_IN_TMUX:-}" ]; then
 fi
 
 #######################################
+# SSH keepalive — prevent disconnect
+# during long apt upgrade operations
+#######################################
+SSHD_CONF="/etc/ssh/sshd_config"
+SSHD_CHANGED=0
+
+if [ -f "$SSHD_CONF" ]; then
+  if ! grep -qE '^\s*ClientAliveInterval\s' "$SSHD_CONF"; then
+    echo "ClientAliveInterval 60" | sudo tee -a "$SSHD_CONF" >/dev/null
+    SSHD_CHANGED=1
+  fi
+  if ! grep -qE '^\s*ClientAliveCountMax\s' "$SSHD_CONF"; then
+    echo "ClientAliveCountMax 10" | sudo tee -a "$SSHD_CONF" >/dev/null
+    SSHD_CHANGED=1
+  fi
+  if [ "$SSHD_CHANGED" -eq 1 ]; then
+    echo "===> SSH keepalive configured (60s interval, 10 retries)"
+    sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd 2>/dev/null || true
+  fi
+fi
+
+#######################################
 # Force noninteractive APT globally
 # Must be set before any apt call
 #######################################
@@ -55,7 +77,7 @@ URL_CUSTOM="${URL_CUSTOM:-}"
 
 DISPLAY_PROFILE="${DISPLAY_PROFILE:-touch7-legacy}"   # touch2 | touch7-legacy
 DISPLAY_CONNECTOR="${DISPLAY_CONNECTOR:-auto}"         # auto | DSI-1 | DSI-2 | HDMI-A-1 ...
-DSI_PORT="${DSI_PORT:-dsi1}"                           # dsi0 | dsi1
+DSI_PORT="${DSI_PORT:-dsi0}"                           # dsi0 | dsi1
 ROTATION="${ROTATION:-auto}"                           # auto | normal | 90 | 180 | 270
 
 HIDE_CURSOR="${HIDE_CURSOR:-yes}"
