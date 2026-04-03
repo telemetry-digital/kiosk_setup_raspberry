@@ -439,14 +439,36 @@ sprite.SetScale(scale, scale);
 EOF
 
     sudo plymouth-set-default-theme telemetry-kiosk
-    sudo update-initramfs -u
 
+    # Regenerate initramfs for all installed kernels
+    # On Trixie initrd lives in /boot/, auto_initramfs=1 in config.txt loads it
+    sudo update-initramfs -u -k all
+
+    # Verify initramfs was generated
+    KERNEL_VER="$(uname -r)"
+    if [ -f "/boot/initrd.img-${KERNEL_VER}" ]; then
+      log "initramfs verified: /boot/initrd.img-${KERNEL_VER}"
+    else
+      warn "initramfs not found at /boot/initrd.img-${KERNEL_VER} — splash may not appear"
+    fi
+
+    # Ensure auto_initramfs is enabled in config.txt (Trixie requirement)
+    if [ -f "$CONFIG_TXT" ]; then
+      if ! grep -qE '^\s*auto_initramfs\s*=' "$CONFIG_TXT"; then
+        echo "auto_initramfs=1" | sudo tee -a "$CONFIG_TXT" >/dev/null
+        log "Added auto_initramfs=1 to config.txt"
+      fi
+    fi
+
+    # Fix cmdline.txt — must be exactly one line, no trailing garbage
     CMDLINE_TXT="/boot/firmware/cmdline.txt"
     if [ -f "$CMDLINE_TXT" ]; then
-      sudo sed -i \
-        's/ splash//g; s/ quiet//g; s/ plymouth\.ignore-serial-consoles//g' \
-        "$CMDLINE_TXT"
-      sudo sed -i '1 s/$/ quiet splash plymouth.ignore-serial-consoles/' "$CMDLINE_TXT"
+      # Read only the first clean line, strip any accidental multi-line content
+      CMDLINE_CLEAN="$(head -n1 "$CMDLINE_TXT" | tr -d '\n' \
+        | sed 's/ splash//g; s/ quiet//g; s/ plymouth\.ignore-serial-consoles//g')"
+      printf '%s quiet splash plymouth.ignore-serial-consoles\n' \
+        "$CMDLINE_CLEAN" | sudo tee "$CMDLINE_TXT" >/dev/null
+      log "cmdline.txt updated: $(cat "$CMDLINE_TXT")"
     fi
   else
     warn "Splash image not found at '$SPLASH_SOURCE' — skipping splash install."
