@@ -12,6 +12,40 @@ set -euo pipefail
 ###############################################################################
 
 #######################################
+# tmux guard — re-launch inside tmux
+# so SSH disconnect does not kill setup
+#######################################
+if [ -z "${TMUX:-}" ] && [ -z "${KIOSK_IN_TMUX:-}" ]; then
+  if command -v tmux >/dev/null 2>&1; then
+    echo "===> Relaunching inside tmux session 'kiosk-setup' (SSH-safe)"
+    echo "     To reattach if disconnected: tmux attach -t kiosk-setup"
+    echo
+    # Export all current env vars into the new tmux session
+    exec tmux new-session -s kiosk-setup \
+      -e "KIOSK_IN_TMUX=1" \
+      "env $(export -p | sed 's/declare -x //;s/export //' | tr '\n' ' ') bash $(realpath "$0")"
+  else
+    echo "===> tmux not found — installing it first"
+    sudo apt-get update -qq
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q tmux
+    echo "===> Relaunching inside tmux session 'kiosk-setup'"
+    echo "     To reattach if disconnected: tmux attach -t kiosk-setup"
+    echo
+    exec tmux new-session -s kiosk-setup \
+      -e "KIOSK_IN_TMUX=1" \
+      "env $(export -p | sed 's/declare -x //;s/export //' | tr '\n' ' ') bash $(realpath "$0")"
+  fi
+fi
+
+#######################################
+# Force noninteractive APT globally
+# Must be set before any apt call
+#######################################
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+export NEEDRESTART_SUSPEND=1
+
+#######################################
 # Defaults — override via env vars
 #######################################
 APP_MODE="${APP_MODE:-codesys}"
@@ -21,7 +55,7 @@ URL_CUSTOM="${URL_CUSTOM:-}"
 
 DISPLAY_PROFILE="${DISPLAY_PROFILE:-touch7-legacy}"   # touch2 | touch7-legacy
 DISPLAY_CONNECTOR="${DISPLAY_CONNECTOR:-auto}"         # auto | DSI-1 | DSI-2 | HDMI-A-1 ...
-DSI_PORT="${DSI_PORT:-dsi0}"                           # dsi0 | dsi1
+DSI_PORT="${DSI_PORT:-dsi1}"                           # dsi0 | dsi1
 ROTATION="${ROTATION:-auto}"                           # auto | normal | 90 | 180 | 270
 
 HIDE_CURSOR="${HIDE_CURSOR:-yes}"
@@ -137,10 +171,8 @@ case "$DSI_PORT" in
 esac
 
 #######################################
-# Noninteractive APT
+# APT options
 #######################################
-export DEBIAN_FRONTEND=noninteractive
-export NEEDRESTART_MODE=a
 APT_OPTS=(
   "-y" "-q"
   "-o" "Dpkg::Options::=--force-confdef"
@@ -161,11 +193,10 @@ log "Splash screen:    $INSTALL_SPLASH"
 #######################################
 if [ "$RUN_UPDATE_UPGRADE" = "yes" ]; then
   log "Updating package lists"
-  sudo apt update
+  sudo -E apt-get update -q
 
   log "Upgrading installed packages"
-  sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
-    apt upgrade "${APT_OPTS[@]}"
+  sudo -E apt-get upgrade "${APT_OPTS[@]}"
 fi
 
 #######################################
@@ -180,9 +211,13 @@ else
   fail "No chromium package found in APT repositories."
 fi
 
+# Pre-seed needrestart to never prompt (belt-and-suspenders on top of env var)
+if dpkg -l needrestart >/dev/null 2>&1; then
+  echo "\$nrconf{restart} = 'a';" | sudo tee /etc/needrestart/conf.d/kiosk.conf >/dev/null
+fi
+
 log "Installing packages: labwc greetd seatd wlr-randr wtype plymouth $CHROMIUM_PKG"
-sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
-  apt install --no-install-recommends "${APT_OPTS[@]}" \
+sudo -E apt-get install --no-install-recommends "${APT_OPTS[@]}" \
   labwc \
   greetd \
   seatd \
@@ -409,7 +444,7 @@ chown -R "$CURRENT_USER:$CURRENT_USER" \
   "$HOME_DIR/.local"
 
 log "Cleaning APT cache"
-sudo apt clean
+sudo apt-get clean
 
 #######################################
 # Done

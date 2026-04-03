@@ -21,6 +21,23 @@ Designed for [telemetry.digital](https://telemetry.digital) hardware — officia
 
 ---
 
+## SSH-safe installation
+
+The setup takes several minutes (system upgrade + package install). If your SSH connection drops mid-install, the process would normally hang or abort.
+
+Both scripts handle this automatically — `kiosk_setup.sh` detects if it is running outside tmux and **re-launches itself inside a new tmux session** called `kiosk-setup`. This means:
+
+- SSH can disconnect at any time without interrupting the install
+- If you lose connection, simply SSH back and reattach:
+
+```bash
+tmux attach -t kiosk-setup
+```
+
+tmux is installed automatically if not present.
+
+---
+
 ## Quick start
 
 ### One-liner install (recommended)
@@ -159,6 +176,20 @@ bash install.sh
 ---
 
 ## Troubleshooting
+
+### SSH disconnected during install
+
+Reattach to the running tmux session:
+
+```bash
+tmux attach -t kiosk-setup
+```
+
+If the session no longer exists, the script already finished (or failed). Check the output with:
+
+```bash
+journalctl --no-pager | tail -50
+```
 
 ### Chromium does not start
 

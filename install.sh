@@ -35,6 +35,13 @@ fail() { echo "ERROR: $*" >&2; exit 1; }
 #######################################
 [ "$(id -u)" -ne 0 ] || fail "Run as a regular user with sudo privileges, not as root."
 
+# Ensure tmux is available — kiosk_setup.sh will re-launch itself inside it
+if ! command -v tmux >/dev/null 2>&1; then
+  log "Installing tmux (required for SSH-safe setup)"
+  sudo apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q tmux
+fi
+
 # Prefer curl, fall back to wget
 if command -v curl >/dev/null 2>&1; then
   download() { curl -fsSL -o "$1" "$2" || fail "Download failed: $2"; }
