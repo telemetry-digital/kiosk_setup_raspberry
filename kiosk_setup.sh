@@ -3,28 +3,30 @@
 set -euo pipefail
 
 ###############################################################################
-# telemetry.digital Raspberry Pi kiosk setup
-# Target: Raspberry Pi OS Lite (Bookworm/Trixie), official Raspberry Pi displays
-# Modes: CODESYS WebVisu / Home Assistant
+# telemetry.digital — Raspberry Pi Kiosk Setup
+# Target: Raspberry Pi OS Lite (Bookworm / Trixie), official RPi displays
+# Modes:  codesys | homeassistant | custom
 #
-# Run as a regular user with sudo privileges, not as root.
+# Run as a regular user with sudo privileges, NOT as root.
+# Configurable via environment variables — see README.md for full reference.
 ###############################################################################
 
 #######################################
-# Defaults - edit here if needed
+# Defaults — override via env vars
 #######################################
-APP_MODE="${APP_MODE:-codesys}"                  # codesys | homeassistant
+APP_MODE="${APP_MODE:-codesys}"
 URL_CODESYS="${URL_CODESYS:-http://localhost:8080/webvisu.htm}"
-URL_HOMEASSISTANT="${URL_HOMEASSISTANT:-http://homeassistant:8123}"
+URL_HOMEASSISTANT="${URL_HOMEASSISTANT:-http://homeassistant.local:8123}"
+URL_CUSTOM="${URL_CUSTOM:-}"
 
-DISPLAY_PROFILE="${DISPLAY_PROFILE:-touch7-legacy}"    # touch2 | touch7-legacy
-DISPLAY_CONNECTOR="${DISPLAY_CONNECTOR:-auto}"  # auto | DSI-1 | DSI-2 | HDMI-A-1 ...
-DSI_PORT="${DSI_PORT:-dsi0}"                    # dsi0 | dsi1 (boot overlay port)
-ROTATION="${ROTATION:-auto}"                    # auto | normal | 90 | 180 | 270
+DISPLAY_PROFILE="${DISPLAY_PROFILE:-touch7-legacy}"   # touch2 | touch7-legacy
+DISPLAY_CONNECTOR="${DISPLAY_CONNECTOR:-auto}"         # auto | DSI-1 | DSI-2 | HDMI-A-1 ...
+DSI_PORT="${DSI_PORT:-dsi0}"                           # dsi0 | dsi1
+ROTATION="${ROTATION:-auto}"                           # auto | normal | 90 | 180 | 270
 
-HIDE_CURSOR="${HIDE_CURSOR:-yes}"               # yes | no
-RUN_UPDATE_UPGRADE="${RUN_UPDATE_UPGRADE:-yes}" # yes | no
-INSTALL_SPLASH="${INSTALL_SPLASH:-yes}"         # yes | no
+HIDE_CURSOR="${HIDE_CURSOR:-yes}"
+RUN_UPDATE_UPGRADE="${RUN_UPDATE_UPGRADE:-yes}"
+INSTALL_SPLASH="${INSTALL_SPLASH:-yes}"
 SPLASH_IMAGE="${SPLASH_IMAGE:-splash_tt.png}"
 
 CHROMIUM_EXTRA_FLAGS="${CHROMIUM_EXTRA_FLAGS:-}"
@@ -33,29 +35,17 @@ BOOT_WAIT_SECONDS="${BOOT_WAIT_SECONDS:-2}"
 #######################################
 # Helpers
 #######################################
-log() {
-  echo "===> $1"
-}
-
-warn() {
-  echo "WARNING: $1"
-}
-
-fail() {
-  echo "ERROR: $1" >&2
-  exit 1
-}
+log()  { echo "===> $*"; }
+warn() { echo "WARNING: $*"; }
+fail() { echo "ERROR: $*" >&2; exit 1; }
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "Required command not found: $1"
 }
 
 set_or_append_cfg() {
-  local file="$1"
-  local key="$2"
-  local value="$3"
-
-  if grep -qE "^\s*#?\s*${key}=" "$file"; then
+  local file="$1" key="$2" value="$3"
+  if grep -qE "^\s*#?\s*${key}=" "$file" 2>/dev/null; then
     sudo sed -i "s|^\s*#\?\s*${key}=.*|${key}=${value}|" "$file"
   else
     echo "${key}=${value}" | sudo tee -a "$file" >/dev/null
@@ -63,8 +53,7 @@ set_or_append_cfg() {
 }
 
 remove_cfg_lines() {
-  local file="$1"
-  shift
+  local file="$1"; shift
   for pattern in "$@"; do
     sudo sed -i "\|${pattern}|d" "$file"
   done
@@ -73,9 +62,7 @@ remove_cfg_lines() {
 #######################################
 # Preconditions
 #######################################
-if [ "$(id -u)" -eq 0 ]; then
-  fail "Run this script as a regular user with sudo privileges, not as root."
-fi
+[ "$(id -u)" -ne 0 ] || fail "Run as a regular user with sudo privileges, not as root."
 
 need_cmd sudo
 need_cmd apt
@@ -97,32 +84,33 @@ OS_CODENAME="${VERSION_CODENAME:-unknown}"
 OS_LIKE="${ID_LIKE:-}"
 
 SUPPORTED=0
-case "$OS_ID" in
-  raspbian|debian) SUPPORTED=1 ;;
-esac
-
+case "$OS_ID" in raspbian|debian) SUPPORTED=1 ;; esac
 if [ "$SUPPORTED" -eq 0 ]; then
-  case "$OS_LIKE" in
-    *debian*) SUPPORTED=1 ;;
-  esac
+  case "$OS_LIKE" in *debian*) SUPPORTED=1 ;; esac
 fi
-
 [ "$SUPPORTED" -eq 1 ] || fail "This script supports Raspberry Pi OS / Debian-based systems only."
 
 case "$OS_CODENAME" in
   bookworm|trixie) ;;
-  *) warn "This release is not explicitly tested. Continuing anyway." ;;
+  *) warn "OS codename '$OS_CODENAME' is not explicitly tested. Continuing anyway." ;;
 esac
 
 #######################################
-# Resolve mode, display, rotation
+# Resolve mode / URL
 #######################################
 case "$APP_MODE" in
-  codesys) TARGET_URL="$URL_CODESYS" ;;
+  codesys)       TARGET_URL="$URL_CODESYS" ;;
   homeassistant) TARGET_URL="$URL_HOMEASSISTANT" ;;
-  *) fail "Unsupported APP_MODE: $APP_MODE" ;;
+  custom)
+    [ -n "$URL_CUSTOM" ] || fail "APP_MODE=custom requires URL_CUSTOM to be set."
+    TARGET_URL="$URL_CUSTOM"
+    ;;
+  *) fail "Unsupported APP_MODE: $APP_MODE  (valid: codesys | homeassistant | custom)" ;;
 esac
 
+#######################################
+# Resolve display profile
+#######################################
 case "$DISPLAY_PROFILE" in
   touch2)
     DISPLAY_MODE="720x1280"
@@ -133,19 +121,19 @@ case "$DISPLAY_PROFILE" in
     DEFAULT_ROTATION="normal"
     ;;
   *)
-    fail "Unsupported DISPLAY_PROFILE: $DISPLAY_PROFILE"
+    fail "Unsupported DISPLAY_PROFILE: $DISPLAY_PROFILE  (valid: touch2 | touch7-legacy)"
     ;;
 esac
 
 case "$ROTATION" in
-  auto) EFFECTIVE_ROTATION="$DEFAULT_ROTATION" ;;
-  normal|90|180|270) EFFECTIVE_ROTATION="$ROTATION" ;;
-  *) fail "Unsupported ROTATION: $ROTATION" ;;
+  auto)                     EFFECTIVE_ROTATION="$DEFAULT_ROTATION" ;;
+  normal|90|180|270)        EFFECTIVE_ROTATION="$ROTATION" ;;
+  *) fail "Unsupported ROTATION: $ROTATION  (valid: auto | normal | 90 | 180 | 270)" ;;
 esac
 
 case "$DSI_PORT" in
   dsi0|dsi1) ;;
-  *) fail "Unsupported DSI_PORT: $DSI_PORT" ;;
+  *) fail "Unsupported DSI_PORT: $DSI_PORT  (valid: dsi0 | dsi1)" ;;
 esac
 
 #######################################
@@ -154,34 +142,34 @@ esac
 export DEBIAN_FRONTEND=noninteractive
 export NEEDRESTART_MODE=a
 APT_OPTS=(
-  "-y"
-  "-q"
+  "-y" "-q"
   "-o" "Dpkg::Options::=--force-confdef"
   "-o" "Dpkg::Options::=--force-confold"
 )
 
-log "Detected OS: $OS_NAME"
-log "Detected version: $OS_VERSION"
-log "Detected codename: $OS_CODENAME"
-log "Mode: $APP_MODE"
-log "Target URL: $TARGET_URL"
-log "Display profile: $DISPLAY_PROFILE"
-log "Display mode: $DISPLAY_MODE"
-log "Rotation: $EFFECTIVE_ROTATION"
-log "Display connector: $DISPLAY_CONNECTOR"
-log "DSI port: $DSI_PORT"
+log "OS:               $OS_NAME $OS_VERSION ($OS_CODENAME)"
+log "Mode:             $APP_MODE"
+log "Target URL:       $TARGET_URL"
+log "Display profile:  $DISPLAY_PROFILE ($DISPLAY_MODE)"
+log "Rotation:         $EFFECTIVE_ROTATION"
+log "Connector:        $DISPLAY_CONNECTOR"
+log "DSI port:         $DSI_PORT"
+log "Splash screen:    $INSTALL_SPLASH"
 
+#######################################
+# System update
+#######################################
 if [ "$RUN_UPDATE_UPGRADE" = "yes" ]; then
   log "Updating package lists"
   sudo apt update
 
-  log "Upgrading installed packages (fully noninteractive)"
+  log "Upgrading installed packages"
   sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
     apt upgrade "${APT_OPTS[@]}"
 fi
 
 #######################################
-# Package install
+# Install packages
 #######################################
 CHROMIUM_PKG=""
 if apt-cache show chromium >/dev/null 2>&1; then
@@ -192,7 +180,7 @@ else
   fail "No chromium package found in APT repositories."
 fi
 
-log "Installing required packages"
+log "Installing packages: labwc greetd seatd wlr-randr wtype plymouth $CHROMIUM_PKG"
 sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
   apt install --no-install-recommends "${APT_OPTS[@]}" \
   labwc \
@@ -208,45 +196,41 @@ CHROMIUM_BIN="$(command -v chromium || command -v chromium-browser || true)"
 [ -n "$CHROMIUM_BIN" ] || fail "Chromium binary not found after installation."
 
 #######################################
-# Basic system config
+# /boot/firmware/config.txt
 #######################################
 log "Configuring boot display settings"
 CONFIG_TXT="/boot/firmware/config.txt"
+
 if [ -f "$CONFIG_TXT" ]; then
   set_or_append_cfg "$CONFIG_TXT" "dtparam=i2c_arm" "on"
 
-  if grep -qE '^\s*#?\s*dtoverlay=vc4-kms-v3d' "$CONFIG_TXT"; then
-    sudo sed -i 's/^\s*#\?\s*dtoverlay=vc4-kms-v3d.*/dtoverlay=vc4-kms-v3d/' "$CONFIG_TXT"
+  # Ensure KMS overlay is enabled (uncomment if commented out)
+  if grep -qE '^\s*#\s*dtoverlay=vc4-kms-v3d' "$CONFIG_TXT"; then
+    sudo sed -i 's/^\s*#\s*dtoverlay=vc4-kms-v3d.*/dtoverlay=vc4-kms-v3d/' "$CONFIG_TXT"
   elif ! grep -qE '^\s*dtoverlay=vc4-kms-v3d' "$CONFIG_TXT"; then
     echo "dtoverlay=vc4-kms-v3d" | sudo tee -a "$CONFIG_TXT" >/dev/null
   fi
 
   if [ "$DISPLAY_PROFILE" = "touch7-legacy" ]; then
-    log "Configuring legacy 7-inch DSI display overlay for $DSI_PORT"
-
+    log "Setting legacy 7-inch DSI overlay for $DSI_PORT"
     set_or_append_cfg "$CONFIG_TXT" "display_auto_detect" "0"
-
     remove_cfg_lines "$CONFIG_TXT" \
       '^\s*dtoverlay=vc4-kms-dsi-7inch' \
       '^\s*dtoverlay=vc4-kms-dsi-ili9881-5inch' \
       '^\s*dtoverlay=vc4-kms-dsi-ili9881-7inch'
-
     echo "dtoverlay=vc4-kms-dsi-7inch,$DSI_PORT" | sudo tee -a "$CONFIG_TXT" >/dev/null
 
   elif [ "$DISPLAY_PROFILE" = "touch2" ]; then
-    log "Configuring Touch Display 2 using auto-detect"
-
+    log "Setting Touch Display 2 auto-detect"
     set_or_append_cfg "$CONFIG_TXT" "display_auto_detect" "1"
-
-    remove_cfg_lines "$CONFIG_TXT" \
-      '^\s*dtoverlay=vc4-kms-dsi-7inch'
+    remove_cfg_lines "$CONFIG_TXT" '^\s*dtoverlay=vc4-kms-dsi-7inch'
   fi
 else
-  warn "$CONFIG_TXT not found; skipping boot display config."
+  warn "$CONFIG_TXT not found — skipping boot display config."
 fi
 
 #######################################
-# greetd -> labwc
+# greetd -> labwc autologin
 #######################################
 log "Configuring greetd"
 sudo mkdir -p /etc/greetd
@@ -263,11 +247,15 @@ sudo systemctl enable greetd >/dev/null 2>&1 || true
 sudo systemctl set-default graphical.target >/dev/null 2>&1 || true
 
 #######################################
-# User scripts and labwc config
+# User scripts & labwc config
 #######################################
-log "Preparing user kiosk files"
-mkdir -p "$HOME_DIR/.config/labwc" "$HOME_DIR/.local/bin" "$HOME_DIR/.local/share"
+log "Writing kiosk scripts and labwc config"
+mkdir -p \
+  "$HOME_DIR/.config/labwc" \
+  "$HOME_DIR/.local/bin" \
+  "$HOME_DIR/.local/share"
 
+# --- display setup script ---
 cat > "$HOME_DIR/.local/bin/kiosk-display-setup.sh" <<EOF
 #!/bin/sh
 set -eu
@@ -281,46 +269,49 @@ pick_output() {
     echo "\$DISPLAY_CONNECTOR"
     return 0
   fi
-
-  if ! command -v wlr-randr >/dev/null 2>&1; then
-    exit 0
-  fi
-
-  OUTPUT="\$(wlr-randr 2>/dev/null | awk '/^[A-Za-z0-9-]+ / {print \$1}' | grep -E '^(DSI|HDMI|eDP|LVDS)' | head -n1 || true)"
+  command -v wlr-randr >/dev/null 2>&1 || exit 0
+  OUTPUT="\$(wlr-randr 2>/dev/null \
+    | awk '/^[A-Za-z0-9-]+ / {print \$1}' \
+    | grep -E '^(DSI|HDMI|eDP|LVDS)' \
+    | head -n1 || true)"
   [ -n "\$OUTPUT" ] && echo "\$OUTPUT" || true
 }
 
 OUTPUT="\$(pick_output || true)"
-
 if [ -n "\$OUTPUT" ]; then
-  wlr-randr --output "\$OUTPUT" --mode "\$DISPLAY_MODE" >/dev/null 2>&1 || true
+  wlr-randr --output "\$OUTPUT" --mode "\$DISPLAY_MODE"   >/dev/null 2>&1 || true
   wlr-randr --output "\$OUTPUT" --transform "\$EFFECTIVE_ROTATION" >/dev/null 2>&1 || true
 fi
 EOF
 
+# --- browser launch script ---
 cat > "$HOME_DIR/.local/bin/kiosk-browser-launch.sh" <<EOF
 #!/bin/sh
 set -eu
 sleep "${BOOT_WAIT_SECONDS}"
-"${CHROMIUM_BIN}" \
-  --kiosk \
-  --noerrdialogs \
-  --disable-infobars \
-  --disable-session-crashed-bubble \
-  --disable-features=Translate \
-  --check-for-update-interval=31536000 \
-  --password-store=basic \
-  --autoplay-policy=no-user-gesture-required \
-  ${CHROMIUM_EXTRA_FLAGS} \
+"${CHROMIUM_BIN}" \\
+  --kiosk \\
+  --noerrdialogs \\
+  --disable-infobars \\
+  --disable-session-crashed-bubble \\
+  --disable-features=Translate \\
+  --check-for-update-interval=31536000 \\
+  --password-store=basic \\
+  --autoplay-policy=no-user-gesture-required \\
+  ${CHROMIUM_EXTRA_FLAGS} \\
   "${TARGET_URL}"
 EOF
 
-chmod +x "$HOME_DIR/.local/bin/kiosk-display-setup.sh" "$HOME_DIR/.local/bin/kiosk-browser-launch.sh"
+chmod +x \
+  "$HOME_DIR/.local/bin/kiosk-display-setup.sh" \
+  "$HOME_DIR/.local/bin/kiosk-browser-launch.sh"
 
+# --- labwc rc.xml ---
 cat > "$HOME_DIR/.config/labwc/rc.xml" <<'EOF'
 <?xml version="1.0"?>
 <labwc_config>
   <keyboard>
+    <!-- Win+H — hide cursor (move to 1,1 off-screen) -->
     <keybind key="W-h">
       <action name="HideCursor"/>
       <action name="WarpCursor" to="output" x="1" y="1"/>
@@ -329,6 +320,7 @@ cat > "$HOME_DIR/.config/labwc/rc.xml" <<'EOF'
 </labwc_config>
 EOF
 
+# --- labwc autostart ---
 cat > "$HOME_DIR/.config/labwc/autostart" <<EOF
 #!/bin/sh
 
@@ -337,7 +329,7 @@ cat > "$HOME_DIR/.config/labwc/autostart" <<EOF
 EOF
 
 if [ "$HIDE_CURSOR" = "yes" ]; then
-cat >> "$HOME_DIR/.config/labwc/autostart" <<'EOF'
+  cat >> "$HOME_DIR/.config/labwc/autostart" <<'EOF'
 sleep 1 && wtype -M logo -k h -m logo >/dev/null 2>&1 &
 EOF
 fi
@@ -349,17 +341,19 @@ EOF
 chmod +x "$HOME_DIR/.config/labwc/autostart"
 
 #######################################
-# Splash screen
+# Plymouth splash screen
 #######################################
 if [ "$INSTALL_SPLASH" = "yes" ]; then
   SPLASH_SOURCE="$SCRIPT_DIR/$SPLASH_IMAGE"
+
   if [ -f "$SPLASH_SOURCE" ]; then
-    log "Installing custom splash screen"
+    log "Installing Plymouth splash screen"
 
-    sudo mkdir -p /usr/share/plymouth/themes/telemetry-kiosk
-    sudo install -m 0644 "$SPLASH_SOURCE" /usr/share/plymouth/themes/telemetry-kiosk/splash_tt.png
+    THEME_DIR="/usr/share/plymouth/themes/telemetry-kiosk"
+    sudo mkdir -p "$THEME_DIR"
+    sudo install -m 0644 "$SPLASH_SOURCE" "$THEME_DIR/splash_tt.png"
 
-    sudo tee /usr/share/plymouth/themes/telemetry-kiosk/telemetry-kiosk.plymouth >/dev/null <<'EOF'
+    sudo tee "$THEME_DIR/telemetry-kiosk.plymouth" >/dev/null <<'EOF'
 [Plymouth Theme]
 Name=telemetry-kiosk
 Description=telemetry.digital kiosk splash
@@ -370,24 +364,20 @@ ImageDir=/usr/share/plymouth/themes/telemetry-kiosk
 ScriptFile=/usr/share/plymouth/themes/telemetry-kiosk/telemetry-kiosk.script
 EOF
 
-    sudo tee /usr/share/plymouth/themes/telemetry-kiosk/telemetry-kiosk.script >/dev/null <<'EOF'
+    sudo tee "$THEME_DIR/telemetry-kiosk.script" >/dev/null <<'EOF'
 wallpaper_image = Image("splash_tt.png");
-screen_width = Window.GetWidth();
-screen_height = Window.GetHeight();
-img_width = wallpaper_image.GetWidth();
-img_height = wallpaper_image.GetHeight();
+screen_width    = Window.GetWidth();
+screen_height   = Window.GetHeight();
+img_width       = wallpaper_image.GetWidth();
+img_height      = wallpaper_image.GetHeight();
 
-scale_x = screen_width / img_width;
+scale_x = screen_width  / img_width;
 scale_y = screen_height / img_height;
-scale = scale_x;
-if (scale_y < scale_x) scale = scale_y;
-
-new_width = img_width * scale;
-new_height = img_height * scale;
+scale   = (scale_y < scale_x) ? scale_y : scale_x;
 
 sprite = Sprite(wallpaper_image);
-sprite.SetX((screen_width - new_width) / 2);
-sprite.SetY((screen_height - new_height) / 2);
+sprite.SetX((screen_width  - img_width  * scale) / 2);
+sprite.SetY((screen_height - img_height * scale) / 2);
 sprite.SetScale(scale, scale);
 EOF
 
@@ -396,37 +386,47 @@ EOF
 
     CMDLINE_TXT="/boot/firmware/cmdline.txt"
     if [ -f "$CMDLINE_TXT" ]; then
-      sudo sed -i 's/ splash//g; s/ quiet//g; s/ plymouth.ignore-serial-consoles//g' "$CMDLINE_TXT"
+      sudo sed -i \
+        's/ splash//g; s/ quiet//g; s/ plymouth\.ignore-serial-consoles//g' \
+        "$CMDLINE_TXT"
       sudo sed -i '1 s/$/ quiet splash plymouth.ignore-serial-consoles/' "$CMDLINE_TXT"
     fi
   else
-    warn "Splash image not found: $SPLASH_SOURCE"
+    warn "Splash image not found at '$SPLASH_SOURCE' — skipping splash install."
+    warn "Place '$SPLASH_IMAGE' next to kiosk_setup.sh, or set INSTALL_SPLASH=no"
   fi
 fi
 
 #######################################
 # Cleanup
 #######################################
-log "Removing old keyrings"
+log "Removing stale keyrings"
 rm -rf "$HOME_DIR/.local/share/keyrings"
 
-log "Fixing ownership"
-chown -R "$CURRENT_USER:$CURRENT_USER" "$HOME_DIR/.config" "$HOME_DIR/.local"
+log "Fixing file ownership"
+chown -R "$CURRENT_USER:$CURRENT_USER" \
+  "$HOME_DIR/.config" \
+  "$HOME_DIR/.local"
 
-log "Cleaning package cache"
+log "Cleaning APT cache"
 sudo apt clean
 
+#######################################
+# Done
+#######################################
 echo
-echo "Done."
-echo "Reboot the system to start kiosk mode:"
-echo "  sudo reboot"
+echo "============================================================"
+echo "  Kiosk setup complete!"
+echo "============================================================"
+echo "  App mode:        $APP_MODE"
+echo "  URL:             $TARGET_URL"
+echo "  Display profile: $DISPLAY_PROFILE ($DISPLAY_MODE)"
+echo "  Rotation:        $EFFECTIVE_ROTATION"
+echo "  Connector:       $DISPLAY_CONNECTOR"
+echo "  DSI port:        $DSI_PORT"
+echo "  Splash screen:   $INSTALL_SPLASH"
+echo "============================================================"
 echo
-echo "Summary:"
-echo "  App mode:          $APP_MODE"
-echo "  URL:               $TARGET_URL"
-echo "  Display profile:   $DISPLAY_PROFILE"
-echo "  Display mode:      $DISPLAY_MODE"
-echo "  Rotation:          $EFFECTIVE_ROTATION"
-echo "  Connector:         $DISPLAY_CONNECTOR"
-echo "  DSI port:          $DSI_PORT"
-echo "  Splash:            $INSTALL_SPLASH"
+echo "  Reboot to start kiosk mode:"
+echo "    sudo reboot"
+echo
