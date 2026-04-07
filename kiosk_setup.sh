@@ -77,7 +77,7 @@ URL_CUSTOM="${URL_CUSTOM:-}"
 
 DISPLAY_PROFILE="${DISPLAY_PROFILE:-touch7-legacy}"   # touch2 | touch7-legacy
 DISPLAY_CONNECTOR="${DISPLAY_CONNECTOR:-auto}"         # auto | DSI-1 | DSI-2 | HDMI-A-1 ...
-DSI_PORT="${DSI_PORT:-dsi0}"                           # dsi0 | dsi1
+DSI_PORT="${DSI_PORT:-dsi1}"                           # dsi0 | dsi1
 ROTATION="${ROTATION:-auto}"                           # auto | normal | 90 | 180 | 270
 
 HIDE_CURSOR="${HIDE_CURSOR:-yes}"
