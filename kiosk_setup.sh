@@ -275,7 +275,7 @@ if [ -f "$CONFIG_TXT" ]; then
       '^\s*dtoverlay=vc4-kms-dsi-7inch' \
       '^\s*dtoverlay=vc4-kms-dsi-ili9881-5inch' \
       '^\s*dtoverlay=vc4-kms-dsi-ili9881-7inch'
-    echo "dtoverlay=vc4-kms-dsi-ili9881-7inch,invx,invy,$DSI_PORT" | sudo tee -a "$CONFIG_TXT" >/dev/null
+    echo "dtoverlay=vc4-kms-dsi-ili9881-7inch,invx,invy" | sudo tee -a "$CONFIG_TXT" >/dev/null
 
   elif [ "$DISPLAY_PROFILE" = "touch2" ]; then
     log "Setting Touch Display 2 auto-detect"
