@@ -4,7 +4,7 @@ set -euo pipefail
 
 ###############################################################################
 # telemetry.digital — Raspberry Pi Kiosk Setup
-# Target: Raspberry Pi OS Lite (Bookworm / Trixie), official RPi displays
+# Target: Raspberry Pi OS Lite (Bookworm / Trixie), DSI displays v2
 # Modes:  codesys | homeassistant | custom
 #
 # Run as a regular user with sudo privileges, NOT as root.
@@ -75,7 +75,7 @@ URL_CODESYS="${URL_CODESYS:-http://localhost:8080/webvisu.htm}"
 URL_HOMEASSISTANT="${URL_HOMEASSISTANT:-http://homeassistant.local:8123}"
 URL_CUSTOM="${URL_CUSTOM:-}"
 
-DISPLAY_PROFILE="${DISPLAY_PROFILE:-touch7-legacy}"   # touch2 | touch7-legacy
+DISPLAY_PROFILE="${DISPLAY_PROFILE:-touch7}"   # touch2 | touch7
 DISPLAY_CONNECTOR="${DISPLAY_CONNECTOR:-auto}"         # auto | DSI-1 | DSI-2 | HDMI-A-1 ...
 DSI_PORT="${DSI_PORT:-dsi1}"                           # dsi0 | dsi1
 ROTATION="${ROTATION:-auto}"                           # auto | normal | 90 | 180 | 270
@@ -172,12 +172,12 @@ case "$DISPLAY_PROFILE" in
     DISPLAY_MODE="720x1280"
     DEFAULT_ROTATION="90"
     ;;
-  touch7-legacy)
+  touch7)
     DISPLAY_MODE="800x480"
     DEFAULT_ROTATION="normal"
     ;;
   *)
-    fail "Unsupported DISPLAY_PROFILE: $DISPLAY_PROFILE  (valid: touch2 | touch7-legacy)"
+    fail "Unsupported DISPLAY_PROFILE: $DISPLAY_PROFILE  (valid: touch2 | touch7)"
     ;;
 esac
 
@@ -268,22 +268,43 @@ if [ -f "$CONFIG_TXT" ]; then
     echo "dtoverlay=vc4-kms-v3d" | sudo tee -a "$CONFIG_TXT" >/dev/null
   fi
 
-  if [ "$DISPLAY_PROFILE" = "touch7-legacy" ]; then
-    log "Setting legacy 7-inch DSI overlay for $DSI_PORT"
+  if [ "$DISPLAY_PROFILE" = "touch7" ]; then
+    log "Setting 7-inch v2 DSI overlay (ili9881) for $DSI_PORT"
     set_or_append_cfg "$CONFIG_TXT" "display_auto_detect" "0"
     remove_cfg_lines "$CONFIG_TXT" \
       '^\s*dtoverlay=vc4-kms-dsi-7inch' \
       '^\s*dtoverlay=vc4-kms-dsi-ili9881-5inch' \
       '^\s*dtoverlay=vc4-kms-dsi-ili9881-7inch'
-    echo "dtoverlay=vc4-kms-dsi-7inch,$DSI_PORT" | sudo tee -a "$CONFIG_TXT" >/dev/null
+    echo "dtoverlay=vc4-kms-dsi-ili9881-7inch,invx,invy,$DSI_PORT" | sudo tee -a "$CONFIG_TXT" >/dev/null
 
   elif [ "$DISPLAY_PROFILE" = "touch2" ]; then
     log "Setting Touch Display 2 auto-detect"
     set_or_append_cfg "$CONFIG_TXT" "display_auto_detect" "1"
-    remove_cfg_lines "$CONFIG_TXT" '^\s*dtoverlay=vc4-kms-dsi-7inch'
+    remove_cfg_lines "$CONFIG_TXT" \
+      '^\s*dtoverlay=vc4-kms-dsi-7inch' \
+      '^\s*dtoverlay=vc4-kms-dsi-ili9881-5inch' \
+      '^\s*dtoverlay=vc4-kms-dsi-ili9881-7inch'
   fi
 else
   warn "$CONFIG_TXT not found — skipping boot display config."
+fi
+
+#######################################
+# Touch input calibration (touch7 only)
+#######################################
+UDEV_TOUCH_RULES="/etc/udev/rules.d/99-touch-rotation.rules"
+
+if [ "$DISPLAY_PROFILE" = "touch7" ]; then
+  log "Writing touch calibration matrix for Goodix touchscreen"
+  sudo tee "$UDEV_TOUCH_RULES" >/dev/null <<'EOF'
+ACTION=="add|change", KERNEL=="event*", ATTRS{name}=="Goodix Capacitive TouchScreen", \
+  ENV{LIBINPUT_CALIBRATION_MATRIX}="0 1 0 -1 0 1"
+EOF
+  sudo udevadm control --reload-rules
+  sudo udevadm trigger
+else
+  [ -f "$UDEV_TOUCH_RULES" ] && sudo rm -f "$UDEV_TOUCH_RULES" && \
+    sudo udevadm control --reload-rules || true
 fi
 
 #######################################
