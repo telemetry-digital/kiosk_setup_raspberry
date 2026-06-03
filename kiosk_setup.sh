@@ -311,6 +311,17 @@ if [ -f "$CONFIG_TXT" ]; then
       '^\s*dtoverlay=vc4-kms-dsi-ili9881-5inch' \
       '^\s*dtoverlay=vc4-kms-dsi-ili9881-7inch'
   fi
+
+  # CAN bus — MCP2515 cez SPI1
+  log "Konfigurujem CAN bus (MCP2515 cez SPI1)"
+  set_or_append_cfg "$CONFIG_TXT" "dtparam=spi" "on"
+  grep -qE '^\s*dtoverlay=spi1-3cs' "$CONFIG_TXT" || \
+    echo "dtoverlay=spi1-3cs" | sudo tee -a "$CONFIG_TXT" >/dev/null
+  grep -qE '^\s*dtoverlay=mcp2515,spi1-1' "$CONFIG_TXT" || \
+    echo "dtoverlay=mcp2515,spi1-1,oscillator=16000000,interrupt=22" | sudo tee -a "$CONFIG_TXT" >/dev/null
+  grep -qE '^\s*dtoverlay=mcp2515,spi1-2' "$CONFIG_TXT" || \
+    echo "dtoverlay=mcp2515,spi1-2,oscillator=16000000,interrupt=13" | sudo tee -a "$CONFIG_TXT" >/dev/null
+
 else
   warn "$CONFIG_TXT nenájdený — preskakujem boot konfiguráciu displeja."
 fi
