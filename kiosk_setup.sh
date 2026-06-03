@@ -357,9 +357,9 @@ cat > "$HOME_DIR/.local/bin/kiosk-display-setup.sh" <<EOF
 set -eu
 
 DISPLAY_CONNECTOR="${DISPLAY_CONNECTOR}"
-DISPLAY_MODE="${DISPLAY_MODE}"
 EFFECTIVE_ROTATION="${EFFECTIVE_ROTATION}"
 
+# Try wayland-0 then wayland-1 to find the active Wayland socket
 find_wayland_display() {
   for d in wayland-0 wayland-1; do
     if WAYLAND_DISPLAY="\$d" wlr-randr >/dev/null 2>&1; then
@@ -369,17 +369,16 @@ find_wayland_display() {
   done
 }
 
+# Return the first connected DSI/HDMI/eDP output
 pick_output() {
   if [ "\$DISPLAY_CONNECTOR" != "auto" ]; then
     echo "\$DISPLAY_CONNECTOR"
     return 0
   fi
-  command -v wlr-randr >/dev/null 2>&1 || exit 0
-  OUTPUT="\$(WAYLAND_DISPLAY="\$WL_DISPLAY" wlr-randr 2>/dev/null \
+  wlr-randr 2>/dev/null \
     | awk '/^[A-Za-z0-9-]+ / {print \$1}' \
     | grep -E '^(DSI|HDMI|eDP|LVDS)' \
-    | head -n1 || true)"
-  [ -n "\$OUTPUT" ] && echo "\$OUTPUT" || true
+    | head -n1 || true
 }
 
 WL_DISPLAY="\$(find_wayland_display || true)"
@@ -388,7 +387,6 @@ export WAYLAND_DISPLAY="\$WL_DISPLAY"
 
 OUTPUT="\$(pick_output || true)"
 if [ -n "\$OUTPUT" ]; then
-  wlr-randr --output "\$OUTPUT" --mode "\$DISPLAY_MODE"      >/dev/null 2>&1 || true
   wlr-randr --output "\$OUTPUT" --transform "\$EFFECTIVE_ROTATION" >/dev/null 2>&1 || true
 fi
 EOF
