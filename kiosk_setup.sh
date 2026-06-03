@@ -18,8 +18,7 @@ set -euo pipefail
 #   URL_CODESYS         WebVisu page URL            (default: http://localhost:8080/webvisu.htm)
 #   URL_CUSTOM          If set, overrides URL_CODESYS
 #
-#   DISPLAY_PROFILE     touch7 = 7" DSI (ili9881)   [default]
-#                       touch2 = RPi Touch Display 2
+#   DISPLAY_PROFILE     display = Raspberry Pi DSI display, ili9881 (5" or 7")  [default]
 #   DSI_PORT            dsi0 | dsi1                  (default: dsi0)
 #   DISPLAY_CONNECTOR   auto | DSI-1 | DSI-2 | HDMI-A-1  (default: auto)
 #   ROTATION            auto | normal | 90 | 180 | 270    (default: auto)
@@ -44,7 +43,7 @@ if [ -z "${TMUX:-}" ] && [ -z "${KIOSK_IN_TMUX:-}" ]; then
       -e "KIOSK_IN_TMUX=1" \
       -e "URL_CODESYS=${URL_CODESYS:-}" \
       -e "URL_CUSTOM=${URL_CUSTOM:-}" \
-      -e "DISPLAY_PROFILE=${DISPLAY_PROFILE:-}" \
+      -e "DISPLAY_PROFILE=${DISPLAY_PROFILE:-display}" \
       -e "DISPLAY_CONNECTOR=${DISPLAY_CONNECTOR:-}" \
       -e "DSI_PORT=${DSI_PORT:-}" \
       -e "ROTATION=${ROTATION:-}" \
@@ -108,7 +107,7 @@ export NEEDRESTART_SUSPEND=1
 URL_CODESYS="${URL_CODESYS:-http://localhost:8080/webvisu.htm}"
 URL_CUSTOM="${URL_CUSTOM:-}"
 
-DISPLAY_PROFILE="${DISPLAY_PROFILE:-touch7}"        # touch7 | touch2
+DISPLAY_PROFILE="${DISPLAY_PROFILE:-display}"       # display (ili9881 DSI, 5" or 7")
 DISPLAY_CONNECTOR="${DISPLAY_CONNECTOR:-auto}"      # auto | DSI-1 | DSI-2 | HDMI-A-1
 DSI_PORT="${DSI_PORT:-dsi0}"                        # dsi0 | dsi1
 ROTATION="${ROTATION:-auto}"                        # auto | normal | 90 | 180 | 270
@@ -196,16 +195,12 @@ TARGET_URL="${URL_CUSTOM:-$URL_CODESYS}"
 # Resolve display profile
 #######################################
 case "$DISPLAY_PROFILE" in
-  touch7)
-    # 7" DSI display with ili9881 controller (720x1280 panel, rotated 270°)
+  display)
+    # Raspberry Pi DSI display with ili9881 controller (5" or 7", 270° rotation)
     DEFAULT_ROTATION="270"
     ;;
-  touch2)
-    # Raspberry Pi Touch Display 2 (auto-detected by firmware)
-    DEFAULT_ROTATION="90"
-    ;;
   *)
-    fail "Unsupported DISPLAY_PROFILE: $DISPLAY_PROFILE  (valid: touch7 | touch2)"
+    fail "Unsupported DISPLAY_PROFILE: $DISPLAY_PROFILE  (valid: display)"
     ;;
 esac
 
@@ -295,24 +290,14 @@ if [ -f "$CONFIG_TXT" ]; then
     echo "dtoverlay=vc4-kms-v3d" | sudo tee -a "$CONFIG_TXT" >/dev/null
   fi
 
-  # Display overlay
-  if [ "$DISPLAY_PROFILE" = "touch7" ]; then
-    log "Setting 7\" DSI overlay for $DSI_PORT (ili9881, invx, invy)"
-    set_or_append_cfg "$CONFIG_TXT" "display_auto_detect" "0"
-    remove_cfg_lines "$CONFIG_TXT" \
-      '^\s*dtoverlay=vc4-kms-dsi-7inch' \
-      '^\s*dtoverlay=vc4-kms-dsi-ili9881-5inch' \
-      '^\s*dtoverlay=vc4-kms-dsi-ili9881-7inch'
-    echo "dtoverlay=vc4-kms-dsi-ili9881-7inch,$DSI_PORT,invx,invy" | sudo tee -a "$CONFIG_TXT" >/dev/null
-
-  elif [ "$DISPLAY_PROFILE" = "touch2" ]; then
-    log "Setting RPi Touch Display 2 (firmware auto-detect)"
-    set_or_append_cfg "$CONFIG_TXT" "display_auto_detect" "1"
-    remove_cfg_lines "$CONFIG_TXT" \
-      '^\s*dtoverlay=vc4-kms-dsi-7inch' \
-      '^\s*dtoverlay=vc4-kms-dsi-ili9881-5inch' \
-      '^\s*dtoverlay=vc4-kms-dsi-ili9881-7inch'
-  fi
+  # Display overlay — Raspberry Pi DSI display (ili9881, 5" or 7")
+  log "Setting DSI display overlay for $DSI_PORT (ili9881)"
+  set_or_append_cfg "$CONFIG_TXT" "display_auto_detect" "0"
+  remove_cfg_lines "$CONFIG_TXT" \
+    '^\s*dtoverlay=vc4-kms-dsi-7inch' \
+    '^\s*dtoverlay=vc4-kms-dsi-ili9881-5inch' \
+    '^\s*dtoverlay=vc4-kms-dsi-ili9881-7inch'
+  echo "dtoverlay=vc4-kms-dsi-ili9881-7inch,$DSI_PORT,invx,invy" | sudo tee -a "$CONFIG_TXT" >/dev/null
 
   # CAN bus — MCP2515 via SPI1
   log "Configuring CAN bus (MCP2515 via SPI1)"
@@ -330,22 +315,17 @@ fi
 
 #######################################
 # Touch input calibration
-# (touch7 only — Goodix, 270° rotation)
+# Goodix touchscreen, 270° rotation matrix
 #######################################
 UDEV_TOUCH_RULES="/etc/udev/rules.d/99-touch-rotation.rules"
 
-if [ "$DISPLAY_PROFILE" = "touch7" ]; then
-  log "Writing touch calibration matrix for 270° rotation (Goodix)"
-  sudo tee "$UDEV_TOUCH_RULES" >/dev/null <<'EOF'
+log "Writing touch calibration matrix for 270° rotation (Goodix)"
+sudo tee "$UDEV_TOUCH_RULES" >/dev/null <<'EOF'
 ACTION=="add|change", KERNEL=="event*", ATTRS{name}=="Goodix Capacitive TouchScreen", \
   ENV{LIBINPUT_CALIBRATION_MATRIX}="0 -1 1 1 0 0"
 EOF
-  sudo udevadm control --reload-rules
-  sudo udevadm trigger
-else
-  [ -f "$UDEV_TOUCH_RULES" ] && sudo rm -f "$UDEV_TOUCH_RULES" && \
-    sudo udevadm control --reload-rules || true
-fi
+sudo udevadm control --reload-rules
+sudo udevadm trigger
 
 #######################################
 # greetd — auto-login + launch labwc

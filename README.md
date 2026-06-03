@@ -26,8 +26,7 @@ Built for [telemetry.digital](https://telemetry.digital) hardware — Raspberry 
 
 | Display | Profile | Rotation |
 |---------|---------|---------|
-| 7" DSI v2 (ili9881 controller) | `touch7` *(default)* | 270° |
-| Raspberry Pi Touch Display 2 | `touch2` | 90° |
+| Raspberry Pi DSI display, ili9881 (5" or 7") | `display` *(default)* | 270° |
 
 | OS | Codename | Status |
 |----|----------|--------|
@@ -80,7 +79,7 @@ All options are set via environment variables before the install command.
 
 | Variable | Default | Options | Description |
 |----------|---------|---------|-------------|
-| `DISPLAY_PROFILE` | `touch7` | `touch7` \| `touch2` | Display type |
+| `DISPLAY_PROFILE` | `display` | `display` | Raspberry Pi DSI display (ili9881, 5" or 7") |
 | `DSI_PORT` | `dsi0` | `dsi0` \| `dsi1` | Physical DSI connector on the board |
 | `DISPLAY_CONNECTOR` | `auto` | `auto` \| `DSI-1` \| `DSI-2` \| `HDMI-A-1` | Wayland output name (`auto` = first detected) |
 | `ROTATION` | `auto` | `auto` \| `normal` \| `90` \| `180` \| `270` | Screen rotation (`auto` uses profile default) |
@@ -112,10 +111,9 @@ URL_CODESYS=http://192.168.1.10:8080/webvisu.htm \
 bash <(curl -fsSL .../install.sh)
 ```
 
-### Touch Display 2 on DSI1
+### Display on DSI1 instead of DSI0
 
 ```bash
-DISPLAY_PROFILE=touch2 \
 DSI_PORT=dsi1 \
 bash <(curl -fsSL .../install.sh)
 ```
@@ -219,7 +217,7 @@ BOOT_WAIT_SECONDS=10 bash <(curl -fsSL .../install.sh)
 
 ### Wrong DSI port
 
-On CM4/CM5, physical DSI0 and DSI1 may map to `DSI-1` or `DSI-2` in Wayland depending on the board revision. Try the other port:
+On CM4/CM5, physical DSI0 and DSI1 may map to `DSI-1` or `DSI-2` in Wayland depending on the board revision. Default is `dsi0`. To use the second connector:
 
 ```bash
 DSI_PORT=dsi1 bash <(curl -fsSL .../install.sh)
