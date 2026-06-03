@@ -192,7 +192,7 @@ case "$DISPLAY_PROFILE" in
     ;;
   touch7)
     DISPLAY_MODE="800x480"
-    DEFAULT_ROTATION="normal"
+    DEFAULT_ROTATION="270"
     ;;
   *)
     fail "Unsupported DISPLAY_PROFILE: $DISPLAY_PROFILE  (valid: touch2 | touch7)"
@@ -316,7 +316,7 @@ if [ "$DISPLAY_PROFILE" = "touch7" ]; then
   log "Writing touch calibration matrix for Goodix touchscreen"
   sudo tee "$UDEV_TOUCH_RULES" >/dev/null <<'EOF'
 ACTION=="add|change", KERNEL=="event*", ATTRS{name}=="Goodix Capacitive TouchScreen", \
-  ENV{LIBINPUT_CALIBRATION_MATRIX}="0 1 0 -1 0 1"
+  ENV{LIBINPUT_CALIBRATION_MATRIX}="0 -1 1 1 0 0"
 EOF
   sudo udevadm control --reload-rules
   sudo udevadm trigger
@@ -360,22 +360,35 @@ DISPLAY_CONNECTOR="${DISPLAY_CONNECTOR}"
 DISPLAY_MODE="${DISPLAY_MODE}"
 EFFECTIVE_ROTATION="${EFFECTIVE_ROTATION}"
 
+find_wayland_display() {
+  for d in wayland-0 wayland-1; do
+    if WAYLAND_DISPLAY="\$d" wlr-randr >/dev/null 2>&1; then
+      echo "\$d"
+      return 0
+    fi
+  done
+}
+
 pick_output() {
   if [ "\$DISPLAY_CONNECTOR" != "auto" ]; then
     echo "\$DISPLAY_CONNECTOR"
     return 0
   fi
   command -v wlr-randr >/dev/null 2>&1 || exit 0
-  OUTPUT="\$(wlr-randr 2>/dev/null \
+  OUTPUT="\$(WAYLAND_DISPLAY="\$WL_DISPLAY" wlr-randr 2>/dev/null \
     | awk '/^[A-Za-z0-9-]+ / {print \$1}' \
     | grep -E '^(DSI|HDMI|eDP|LVDS)' \
     | head -n1 || true)"
   [ -n "\$OUTPUT" ] && echo "\$OUTPUT" || true
 }
 
+WL_DISPLAY="\$(find_wayland_display || true)"
+[ -z "\$WL_DISPLAY" ] && exit 0
+export WAYLAND_DISPLAY="\$WL_DISPLAY"
+
 OUTPUT="\$(pick_output || true)"
 if [ -n "\$OUTPUT" ]; then
-  wlr-randr --output "\$OUTPUT" --mode "\$DISPLAY_MODE"   >/dev/null 2>&1 || true
+  wlr-randr --output "\$OUTPUT" --mode "\$DISPLAY_MODE"      >/dev/null 2>&1 || true
   wlr-randr --output "\$OUTPUT" --transform "\$EFFECTIVE_ROTATION" >/dev/null 2>&1 || true
 fi
 EOF
