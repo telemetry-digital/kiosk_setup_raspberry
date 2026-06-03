@@ -396,6 +396,12 @@ cat > "$HOME_DIR/.local/bin/kiosk-browser-launch.sh" <<EOF
 #!/bin/sh
 set -eu
 sleep "${BOOT_WAIT_SECONDS}"
+
+# Remove stale Chromium singleton locks (left over after crash or hostname change)
+rm -f "\$HOME/.config/chromium/SingletonLock" \
+      "\$HOME/.config/chromium/SingletonCookie" \
+      "\$HOME/.config/chromium/SingletonSocket"
+
 "${CHROMIUM_BIN}" \\
   --kiosk \\
   --noerrdialogs \\
