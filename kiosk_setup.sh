@@ -95,7 +95,7 @@ URL_CUSTOM="${URL_CUSTOM:-}"
 
 DISPLAY_PROFILE="${DISPLAY_PROFILE:-touch7}"   # touch2 | touch7
 DISPLAY_CONNECTOR="${DISPLAY_CONNECTOR:-auto}"         # auto | DSI-1 | DSI-2 | HDMI-A-1 ...
-DSI_PORT="${DSI_PORT:-dsi1}"                           # dsi0 | dsi1
+DSI_PORT="${DSI_PORT:-dsi0}"                           # dsi0 | dsi1
 ROTATION="${ROTATION:-auto}"                           # auto | normal | 90 | 180 | 270
 
 HIDE_CURSOR="${HIDE_CURSOR:-yes}"
@@ -293,7 +293,7 @@ if [ -f "$CONFIG_TXT" ]; then
       '^\s*dtoverlay=vc4-kms-dsi-7inch' \
       '^\s*dtoverlay=vc4-kms-dsi-ili9881-5inch' \
       '^\s*dtoverlay=vc4-kms-dsi-ili9881-7inch'
-    echo "dtoverlay=vc4-kms-dsi-ili9881-7inch,invx,invy" | sudo tee -a "$CONFIG_TXT" >/dev/null
+    echo "dtoverlay=vc4-kms-dsi-ili9881-7inch,$DSI_PORT,invx,invy" | sudo tee -a "$CONFIG_TXT" >/dev/null
 
   elif [ "$DISPLAY_PROFILE" = "touch2" ]; then
     log "Setting Touch Display 2 auto-detect"
