@@ -4,27 +4,45 @@ set -euo pipefail
 
 ###############################################################################
 # telemetry.digital — Raspberry Pi Kiosk Setup
-# Target: Raspberry Pi OS Lite (Bookworm / Trixie), DSI displays v2
-# Modes:  codesys | homeassistant | custom
 #
-# Run as a regular user with sudo privileges, NOT as root.
-# Configurable via environment variables — see README.md for full reference.
+# Nainštaluje Chromium kiosk zobrazujúci CodeSys WebVisu na Raspberry Pi
+# s DSI dotykovým displejom (verzia 2 — ili9881 alebo RPi Touch Display 2).
+#
+# Spustiť ako bežný používateľ so sudo právami, NIE ako root.
+#
+# Použitie:
+#   bash <(curl -fsSL https://raw.githubusercontent.com/telemetry-digital/kiosk_setup_raspberry/main/install.sh)
+#
+# Nastavenie cez premenné prostredia (voliteľné):
+#
+#   URL_CODESYS         URL WebVisu stránky         (predvolené: http://localhost:8080/webvisu.htm)
+#   URL_CUSTOM          Ak je nastavené, použije sa namiesto URL_CODESYS
+#
+#   DISPLAY_PROFILE     touch7 = 7-palcový DSI (ili9881)   [predvolené]
+#                       touch2 = RPi Touch Display 2
+#   DSI_PORT            dsi0 | dsi1                         (predvolené: dsi0)
+#   DISPLAY_CONNECTOR   auto | DSI-1 | DSI-2 | HDMI-A-1    (predvolené: auto)
+#   ROTATION            auto | normal | 90 | 180 | 270      (predvolené: auto)
+#
+#   HIDE_CURSOR         yes | no   Skryť kurzor myši        (predvolené: yes)
+#   INSTALL_SPLASH      yes | no   Splash obrazovka         (predvolené: yes)
+#   RUN_UPDATE_UPGRADE  yes | no   apt update + upgrade     (predvolené: yes)
+#   BOOT_WAIT_SECONDS   Čakanie pred štartom Chromia        (predvolené: 2)
+#   CHROMIUM_EXTRA_FLAGS Extra parametre pre Chromium       (predvolené: prázdne)
 ###############################################################################
 
 #######################################
-# tmux guard — re-launch inside tmux
-# so SSH disconnect does not kill setup
+# tmux stráž — znovu spustí skript
+# v tmux session, aby SSH odpojenie
+# neprekazilo inštaláciu
 #######################################
 if [ -z "${TMUX:-}" ] && [ -z "${KIOSK_IN_TMUX:-}" ]; then
   _SELF="$(realpath "$0")"
-  _TMUX_CMD="bash '$_SELF'"
 
   _launch_tmux() {
     exec tmux new-session -s kiosk-setup \
       -e "KIOSK_IN_TMUX=1" \
-      -e "APP_MODE=${APP_MODE:-}" \
       -e "URL_CODESYS=${URL_CODESYS:-}" \
-      -e "URL_HOMEASSISTANT=${URL_HOMEASSISTANT:-}" \
       -e "URL_CUSTOM=${URL_CUSTOM:-}" \
       -e "DISPLAY_PROFILE=${DISPLAY_PROFILE:-}" \
       -e "DISPLAY_CONNECTOR=${DISPLAY_CONNECTOR:-}" \
@@ -36,28 +54,28 @@ if [ -z "${TMUX:-}" ] && [ -z "${KIOSK_IN_TMUX:-}" ]; then
       -e "SPLASH_IMAGE=${SPLASH_IMAGE:-}" \
       -e "CHROMIUM_EXTRA_FLAGS=${CHROMIUM_EXTRA_FLAGS:-}" \
       -e "BOOT_WAIT_SECONDS=${BOOT_WAIT_SECONDS:-}" \
-      "$_TMUX_CMD"
+      "bash '$_SELF'"
   }
 
   if command -v tmux >/dev/null 2>&1; then
-    echo "===> Relaunching inside tmux session 'kiosk-setup' (SSH-safe)"
-    echo "     To reattach if disconnected: tmux attach -t kiosk-setup"
+    echo "===> Spúšťam v tmux session 'kiosk-setup' (bezpečné pri SSH)"
+    echo "     Pri odpojení znovu pripojiť: tmux attach -t kiosk-setup"
     echo
     _launch_tmux
   else
-    echo "===> tmux not found — installing it first"
+    echo "===> tmux nenájdený — inštalujem ho"
     sudo apt-get update -qq
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q tmux
-    echo "===> Relaunching inside tmux session 'kiosk-setup'"
-    echo "     To reattach if disconnected: tmux attach -t kiosk-setup"
+    echo "===> Spúšťam v tmux session 'kiosk-setup'"
+    echo "     Pri odpojení znovu pripojiť: tmux attach -t kiosk-setup"
     echo
     _launch_tmux
   fi
 fi
 
 #######################################
-# SSH keepalive — prevent disconnect
-# during long apt upgrade operations
+# SSH keepalive — zabraňuje odpojeniu
+# počas dlhých apt operácií
 #######################################
 SSHD_CONF="/etc/ssh/sshd_config"
 SSHD_CHANGED=0
@@ -72,31 +90,28 @@ if [ -f "$SSHD_CONF" ]; then
     SSHD_CHANGED=1
   fi
   if [ "$SSHD_CHANGED" -eq 1 ]; then
-    echo "===> SSH keepalive configured (60s interval, 10 retries)"
+    echo "===> SSH keepalive nastavený (interval 60s, 10 pokusov)"
     sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd 2>/dev/null || true
   fi
 fi
 
 #######################################
-# Force noninteractive APT globally
-# Must be set before any apt call
+# APT — zakázať interaktívne výzvy
 #######################################
 export DEBIAN_FRONTEND=noninteractive
 export NEEDRESTART_MODE=a
 export NEEDRESTART_SUSPEND=1
 
 #######################################
-# Defaults — override via env vars
+# Predvolené hodnoty premenných
 #######################################
-APP_MODE="${APP_MODE:-codesys}"
 URL_CODESYS="${URL_CODESYS:-http://localhost:8080/webvisu.htm}"
-URL_HOMEASSISTANT="${URL_HOMEASSISTANT:-http://homeassistant.local:8123}"
 URL_CUSTOM="${URL_CUSTOM:-}"
 
-DISPLAY_PROFILE="${DISPLAY_PROFILE:-touch7}"   # touch2 | touch7
-DISPLAY_CONNECTOR="${DISPLAY_CONNECTOR:-auto}"         # auto | DSI-1 | DSI-2 | HDMI-A-1 ...
-DSI_PORT="${DSI_PORT:-dsi0}"                           # dsi0 | dsi1
-ROTATION="${ROTATION:-auto}"                           # auto | normal | 90 | 180 | 270
+DISPLAY_PROFILE="${DISPLAY_PROFILE:-touch7}"        # touch7 | touch2
+DISPLAY_CONNECTOR="${DISPLAY_CONNECTOR:-auto}"      # auto | DSI-1 | DSI-2 | HDMI-A-1
+DSI_PORT="${DSI_PORT:-dsi0}"                        # dsi0 | dsi1
+ROTATION="${ROTATION:-auto}"                        # auto | normal | 90 | 180 | 270
 
 HIDE_CURSOR="${HIDE_CURSOR:-yes}"
 RUN_UPDATE_UPGRADE="${RUN_UPDATE_UPGRADE:-yes}"
@@ -107,16 +122,17 @@ CHROMIUM_EXTRA_FLAGS="${CHROMIUM_EXTRA_FLAGS:-}"
 BOOT_WAIT_SECONDS="${BOOT_WAIT_SECONDS:-2}"
 
 #######################################
-# Helpers
+# Pomocné funkcie
 #######################################
 log()  { echo "===> $*"; }
-warn() { echo "WARNING: $*"; }
-fail() { echo "ERROR: $*" >&2; exit 1; }
+warn() { echo "UPOZORNENIE: $*"; }
+fail() { echo "CHYBA: $*" >&2; exit 1; }
 
 need_cmd() {
-  command -v "$1" >/dev/null 2>&1 || fail "Required command not found: $1"
+  command -v "$1" >/dev/null 2>&1 || fail "Chýba príkaz: $1"
 }
 
+# Nastaví alebo doplní riadok KEY=VALUE v konfiguračnom súbore
 set_or_append_cfg() {
   local file="$1" key="$2" value="$3"
   if grep -qE "^\s*#?\s*${key}=" "$file" 2>/dev/null; then
@@ -126,6 +142,7 @@ set_or_append_cfg() {
   fi
 }
 
+# Vymaže riadky zodpovedajúce vzoru zo súboru
 remove_cfg_lines() {
   local file="$1"; shift
   for pattern in "$@"; do
@@ -134,9 +151,9 @@ remove_cfg_lines() {
 }
 
 #######################################
-# Preconditions
+# Kontrola predpokladov
 #######################################
-[ "$(id -u)" -ne 0 ] || fail "Run as a regular user with sudo privileges, not as root."
+[ "$(id -u)" -ne 0 ] || fail "Spustiť ako bežný používateľ so sudo, nie ako root."
 
 need_cmd sudo
 need_cmd apt
@@ -145,8 +162,8 @@ CURRENT_USER="$(whoami)"
 HOME_DIR="$(getent passwd "$CURRENT_USER" | cut -d: -f6)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-[ -n "${HOME_DIR:-}" ] && [ -d "$HOME_DIR" ] || fail "Could not determine home directory."
-[ -f /etc/os-release ] || fail "/etc/os-release not found."
+[ -n "${HOME_DIR:-}" ] && [ -d "$HOME_DIR" ] || fail "Nepodarilo sa zistiť domovský adresár."
+[ -f /etc/os-release ] || fail "/etc/os-release nenájdený."
 
 # shellcheck disable=SC1091
 source /etc/os-release
@@ -162,56 +179,48 @@ case "$OS_ID" in raspbian|debian) SUPPORTED=1 ;; esac
 if [ "$SUPPORTED" -eq 0 ]; then
   case "$OS_LIKE" in *debian*) SUPPORTED=1 ;; esac
 fi
-[ "$SUPPORTED" -eq 1 ] || fail "This script supports Raspberry Pi OS / Debian-based systems only."
+[ "$SUPPORTED" -eq 1 ] || fail "Skript podporuje iba Raspberry Pi OS / Debian."
 
 case "$OS_CODENAME" in
   bookworm|trixie) ;;
-  *) warn "OS codename '$OS_CODENAME' is not explicitly tested. Continuing anyway." ;;
+  *) warn "OS '$OS_CODENAME' nie je explicitne otestovaný. Pokračujem." ;;
 esac
 
 #######################################
-# Resolve mode / URL
+# Zostavenie cieľovej URL
 #######################################
-case "$APP_MODE" in
-  codesys)       TARGET_URL="$URL_CODESYS" ;;
-  homeassistant) TARGET_URL="$URL_HOMEASSISTANT" ;;
-  custom)
-    [ -n "$URL_CUSTOM" ] || fail "APP_MODE=custom requires URL_CUSTOM to be set."
-    TARGET_URL="$URL_CUSTOM"
-    ;;
-  *) fail "Unsupported APP_MODE: $APP_MODE  (valid: codesys | homeassistant | custom)" ;;
-esac
+TARGET_URL="${URL_CUSTOM:-$URL_CODESYS}"
 
 #######################################
-# Resolve display profile
+# Rozlíšenie profilu displeja
 #######################################
 case "$DISPLAY_PROFILE" in
-  touch2)
-    DISPLAY_MODE="720x1280"
-    DEFAULT_ROTATION="90"
-    ;;
   touch7)
-    DISPLAY_MODE="800x480"
+    # 7-palcový DSI displej s ili9881 radičom (720x1280, otočený 270°)
     DEFAULT_ROTATION="270"
     ;;
+  touch2)
+    # Raspberry Pi Touch Display 2 (auto-detect)
+    DEFAULT_ROTATION="90"
+    ;;
   *)
-    fail "Unsupported DISPLAY_PROFILE: $DISPLAY_PROFILE  (valid: touch2 | touch7)"
+    fail "Nepodporovaný DISPLAY_PROFILE: $DISPLAY_PROFILE  (platné: touch7 | touch2)"
     ;;
 esac
 
 case "$ROTATION" in
-  auto)                     EFFECTIVE_ROTATION="$DEFAULT_ROTATION" ;;
-  normal|90|180|270)        EFFECTIVE_ROTATION="$ROTATION" ;;
-  *) fail "Unsupported ROTATION: $ROTATION  (valid: auto | normal | 90 | 180 | 270)" ;;
+  auto)                EFFECTIVE_ROTATION="$DEFAULT_ROTATION" ;;
+  normal|90|180|270)   EFFECTIVE_ROTATION="$ROTATION" ;;
+  *) fail "Nepodporovaná ROTATION: $ROTATION  (platné: auto | normal | 90 | 180 | 270)" ;;
 esac
 
 case "$DSI_PORT" in
   dsi0|dsi1) ;;
-  *) fail "Unsupported DSI_PORT: $DSI_PORT  (valid: dsi0 | dsi1)" ;;
+  *) fail "Nepodporovaný DSI_PORT: $DSI_PORT  (platné: dsi0 | dsi1)" ;;
 esac
 
 #######################################
-# APT options
+# APT možnosti
 #######################################
 APT_OPTS=(
   "-y" "-q"
@@ -220,27 +229,25 @@ APT_OPTS=(
 )
 
 log "OS:               $OS_NAME $OS_VERSION ($OS_CODENAME)"
-log "Mode:             $APP_MODE"
-log "Target URL:       $TARGET_URL"
-log "Display profile:  $DISPLAY_PROFILE ($DISPLAY_MODE)"
-log "Rotation:         $EFFECTIVE_ROTATION"
-log "Connector:        $DISPLAY_CONNECTOR"
+log "WebVisu URL:      $TARGET_URL"
+log "Displej:          $DISPLAY_PROFILE (rotácia: $EFFECTIVE_ROTATION)"
 log "DSI port:         $DSI_PORT"
-log "Splash screen:    $INSTALL_SPLASH"
+log "Konektor:         $DISPLAY_CONNECTOR"
+log "Splash obrazovka: $INSTALL_SPLASH"
 
 #######################################
-# System update
+# Aktualizácia systému
 #######################################
 if [ "$RUN_UPDATE_UPGRADE" = "yes" ]; then
-  log "Updating package lists"
+  log "Aktualizujem zoznam balíčkov"
   sudo -E apt-get update -q
 
-  log "Upgrading installed packages"
+  log "Aktualizujem nainštalované balíčky"
   sudo -E apt-get upgrade "${APT_OPTS[@]}"
 fi
 
 #######################################
-# Install packages
+# Inštalácia balíčkov
 #######################################
 CHROMIUM_PKG=""
 if apt-cache show chromium >/dev/null 2>&1; then
@@ -248,38 +255,39 @@ if apt-cache show chromium >/dev/null 2>&1; then
 elif apt-cache show chromium-browser >/dev/null 2>&1; then
   CHROMIUM_PKG="chromium-browser"
 else
-  fail "No chromium package found in APT repositories."
+  fail "Chromium balíček nenájdený v APT repozitároch."
 fi
 
-# Pre-seed needrestart to never prompt (belt-and-suspenders on top of env var)
+# Zakázať needrestart výzvy
 if dpkg -l needrestart >/dev/null 2>&1; then
   echo "\$nrconf{restart} = 'a';" | sudo tee /etc/needrestart/conf.d/kiosk.conf >/dev/null
 fi
 
-log "Installing packages: labwc greetd seatd wlr-randr wtype plymouth $CHROMIUM_PKG"
+log "Inštalujem balíčky: labwc greetd seatd wlr-randr wtype curl plymouth $CHROMIUM_PKG"
 sudo -E apt-get install --no-install-recommends "${APT_OPTS[@]}" \
   labwc \
   greetd \
   seatd \
   wlr-randr \
   wtype \
+  curl \
   plymouth \
   plymouth-themes \
   "$CHROMIUM_PKG"
 
 CHROMIUM_BIN="$(command -v chromium || command -v chromium-browser || true)"
-[ -n "$CHROMIUM_BIN" ] || fail "Chromium binary not found after installation."
+[ -n "$CHROMIUM_BIN" ] || fail "Chromium binárka nenájdená po inštalácii."
 
 #######################################
 # /boot/firmware/config.txt
 #######################################
-log "Configuring boot display settings"
+log "Konfigurujem boot nastavenia displeja"
 CONFIG_TXT="/boot/firmware/config.txt"
 
 if [ -f "$CONFIG_TXT" ]; then
   set_or_append_cfg "$CONFIG_TXT" "dtparam=i2c_arm" "on"
 
-  # Ensure KMS overlay is enabled (uncomment if commented out)
+  # Zabezpečiť že KMS overlay je aktívny
   if grep -qE '^\s*#\s*dtoverlay=vc4-kms-v3d' "$CONFIG_TXT"; then
     sudo sed -i 's/^\s*#\s*dtoverlay=vc4-kms-v3d.*/dtoverlay=vc4-kms-v3d/' "$CONFIG_TXT"
   elif ! grep -qE '^\s*dtoverlay=vc4-kms-v3d' "$CONFIG_TXT"; then
@@ -287,7 +295,7 @@ if [ -f "$CONFIG_TXT" ]; then
   fi
 
   if [ "$DISPLAY_PROFILE" = "touch7" ]; then
-    log "Setting 7-inch v2 DSI overlay (ili9881) for $DSI_PORT"
+    log "Nastavujem DSI overlay pre 7-palcový displej ($DSI_PORT)"
     set_or_append_cfg "$CONFIG_TXT" "display_auto_detect" "0"
     remove_cfg_lines "$CONFIG_TXT" \
       '^\s*dtoverlay=vc4-kms-dsi-7inch' \
@@ -296,7 +304,7 @@ if [ -f "$CONFIG_TXT" ]; then
     echo "dtoverlay=vc4-kms-dsi-ili9881-7inch,$DSI_PORT,invx,invy" | sudo tee -a "$CONFIG_TXT" >/dev/null
 
   elif [ "$DISPLAY_PROFILE" = "touch2" ]; then
-    log "Setting Touch Display 2 auto-detect"
+    log "Nastavujem RPi Touch Display 2 (auto-detect)"
     set_or_append_cfg "$CONFIG_TXT" "display_auto_detect" "1"
     remove_cfg_lines "$CONFIG_TXT" \
       '^\s*dtoverlay=vc4-kms-dsi-7inch' \
@@ -304,16 +312,17 @@ if [ -f "$CONFIG_TXT" ]; then
       '^\s*dtoverlay=vc4-kms-dsi-ili9881-7inch'
   fi
 else
-  warn "$CONFIG_TXT not found — skipping boot display config."
+  warn "$CONFIG_TXT nenájdený — preskakujem boot konfiguráciu displeja."
 fi
 
 #######################################
-# Touch input calibration (touch7 only)
+# Kalibrácia dotykovej obrazovky
+# (iba touch7 — Goodix, rotácia 270°)
 #######################################
 UDEV_TOUCH_RULES="/etc/udev/rules.d/99-touch-rotation.rules"
 
 if [ "$DISPLAY_PROFILE" = "touch7" ]; then
-  log "Writing touch calibration matrix for Goodix touchscreen"
+  log "Zapisujem kalibračnú maticu dotyku (270°)"
   sudo tee "$UDEV_TOUCH_RULES" >/dev/null <<'EOF'
 ACTION=="add|change", KERNEL=="event*", ATTRS{name}=="Goodix Capacitive TouchScreen", \
   ENV{LIBINPUT_CALIBRATION_MATRIX}="0 -1 1 1 0 0"
@@ -326,9 +335,10 @@ else
 fi
 
 #######################################
-# greetd -> labwc autologin
+# greetd — automatické prihlásenie
+# a spustenie labwc (Wayland compositor)
 #######################################
-log "Configuring greetd"
+log "Konfigurujem greetd"
 sudo mkdir -p /etc/greetd
 sudo tee /etc/greetd/config.toml >/dev/null <<EOF
 [terminal]
@@ -343,15 +353,15 @@ sudo systemctl enable greetd >/dev/null 2>&1 || true
 sudo systemctl set-default graphical.target >/dev/null 2>&1 || true
 
 #######################################
-# User scripts & labwc config
+# Kiosk skripty a labwc konfigurácia
 #######################################
-log "Writing kiosk scripts and labwc config"
+log "Zapisujem kiosk skripty a labwc konfiguráciu"
 mkdir -p \
   "$HOME_DIR/.config/labwc" \
   "$HOME_DIR/.local/bin" \
   "$HOME_DIR/.local/share"
 
-# --- display setup script ---
+# --- skript na nastavenie displeja (spustí sa pri štarte labwc) ---
 cat > "$HOME_DIR/.local/bin/kiosk-display-setup.sh" <<EOF
 #!/bin/sh
 set -eu
@@ -359,7 +369,7 @@ set -eu
 DISPLAY_CONNECTOR="${DISPLAY_CONNECTOR}"
 EFFECTIVE_ROTATION="${EFFECTIVE_ROTATION}"
 
-# Try wayland-0 then wayland-1 to find the active Wayland socket
+# Nájde aktívny Wayland socket (wayland-0 alebo wayland-1)
 find_wayland_display() {
   for d in wayland-0 wayland-1; do
     if WAYLAND_DISPLAY="\$d" wlr-randr >/dev/null 2>&1; then
@@ -369,7 +379,7 @@ find_wayland_display() {
   done
 }
 
-# Return the first connected DSI/HDMI/eDP output
+# Vráti prvý dostupný DSI/HDMI/eDP výstup
 pick_output() {
   if [ "\$DISPLAY_CONNECTOR" != "auto" ]; then
     echo "\$DISPLAY_CONNECTOR"
@@ -391,18 +401,18 @@ if [ -n "\$OUTPUT" ]; then
 fi
 EOF
 
-# --- browser launch script ---
+# --- skript na spustenie Chromia ---
 cat > "$HOME_DIR/.local/bin/kiosk-browser-launch.sh" <<EOF
 #!/bin/sh
 set -eu
 sleep "${BOOT_WAIT_SECONDS}"
 
-# Remove stale Chromium singleton locks (left over after crash or hostname change)
+# Vymazať staré Chromium zámky (zostatok po páde alebo zmene hostname)
 rm -f "\$HOME/.config/chromium/SingletonLock" \
       "\$HOME/.config/chromium/SingletonCookie" \
       "\$HOME/.config/chromium/SingletonSocket"
 
-# Wait until the target URL responds (max 120 s, check every 2 s)
+# Čakať kým WebVisu server začne odpovedať (max 120 s, kontrola každé 2 s)
 _waited=0
 while ! curl -fsS --max-time 2 "${TARGET_URL}" >/dev/null 2>&1; do
   sleep 2
@@ -427,12 +437,12 @@ chmod +x \
   "$HOME_DIR/.local/bin/kiosk-display-setup.sh" \
   "$HOME_DIR/.local/bin/kiosk-browser-launch.sh"
 
-# --- labwc rc.xml ---
+# --- labwc klávesové skratky ---
 cat > "$HOME_DIR/.config/labwc/rc.xml" <<'EOF'
 <?xml version="1.0"?>
 <labwc_config>
   <keyboard>
-    <!-- Win+H — hide cursor (move to 1,1 off-screen) -->
+    <!-- Win+H — skryť kurzor -->
     <keybind key="W-h">
       <action name="HideCursor"/>
       <action name="WarpCursor" to="output" x="1" y="1"/>
@@ -462,13 +472,13 @@ EOF
 chmod +x "$HOME_DIR/.config/labwc/autostart"
 
 #######################################
-# Plymouth splash screen
+# Plymouth splash obrazovka
 #######################################
 if [ "$INSTALL_SPLASH" = "yes" ]; then
   SPLASH_SOURCE="$SCRIPT_DIR/$SPLASH_IMAGE"
 
   if [ -f "$SPLASH_SOURCE" ]; then
-    log "Installing Plymouth splash screen"
+    log "Inštalujem Plymouth splash obrazovku"
 
     THEME_DIR="/usr/share/plymouth/themes/telemetry-kiosk"
     sudo mkdir -p "$THEME_DIR"
@@ -503,73 +513,66 @@ sprite.SetScale(scale, scale);
 EOF
 
     sudo plymouth-set-default-theme telemetry-kiosk
-
-    # Regenerate initramfs for all installed kernels
-    # On Trixie initrd lives in /boot/, auto_initramfs=1 in config.txt loads it
     sudo update-initramfs -u -k all
 
-    # Verify initramfs was generated
     KERNEL_VER="$(uname -r)"
     if [ -f "/boot/initrd.img-${KERNEL_VER}" ]; then
-      log "initramfs verified: /boot/initrd.img-${KERNEL_VER}"
+      log "initramfs overený: /boot/initrd.img-${KERNEL_VER}"
     else
-      warn "initramfs not found at /boot/initrd.img-${KERNEL_VER} — splash may not appear"
+      warn "initramfs nenájdený — splash sa nemusí zobraziť"
     fi
 
-    # Ensure auto_initramfs is enabled in config.txt (Trixie requirement)
+    # Trixie vyžaduje auto_initramfs=1 v config.txt
     if [ -f "$CONFIG_TXT" ]; then
       if ! grep -qE '^\s*auto_initramfs\s*=' "$CONFIG_TXT"; then
         echo "auto_initramfs=1" | sudo tee -a "$CONFIG_TXT" >/dev/null
-        log "Added auto_initramfs=1 to config.txt"
+        log "Pridaný auto_initramfs=1 do config.txt"
       fi
     fi
 
-    # Fix cmdline.txt — must be exactly one line, no trailing garbage
+    # cmdline.txt musí byť presne jeden riadok
     CMDLINE_TXT="/boot/firmware/cmdline.txt"
     if [ -f "$CMDLINE_TXT" ]; then
-      # Read only the first clean line, strip any accidental multi-line content
       CMDLINE_CLEAN="$(head -n1 "$CMDLINE_TXT" | tr -d '\n' \
         | sed 's/ splash//g; s/ quiet//g; s/ plymouth\.ignore-serial-consoles//g')"
       printf '%s quiet splash plymouth.ignore-serial-consoles\n' \
         "$CMDLINE_CLEAN" | sudo tee "$CMDLINE_TXT" >/dev/null
-      log "cmdline.txt updated: $(cat "$CMDLINE_TXT")"
+      log "cmdline.txt aktualizovaný: $(cat "$CMDLINE_TXT")"
     fi
   else
-    warn "Splash image not found at '$SPLASH_SOURCE' — skipping splash install."
-    warn "Place '$SPLASH_IMAGE' next to kiosk_setup.sh, or set INSTALL_SPLASH=no"
+    warn "Splash obrázok nenájdený: '$SPLASH_SOURCE' — preskakujem."
+    warn "Umiestni '$SPLASH_IMAGE' vedľa kiosk_setup.sh, alebo nastav INSTALL_SPLASH=no"
   fi
 fi
 
 #######################################
-# Cleanup
+# Upratovanie
 #######################################
-log "Removing stale keyrings"
+log "Odstraňujem staré kľúčenky"
 rm -rf "$HOME_DIR/.local/share/keyrings"
 
-log "Fixing file ownership"
+log "Opravujem vlastníctvo súborov"
 chown -R "$CURRENT_USER:$CURRENT_USER" \
   "$HOME_DIR/.config" \
   "$HOME_DIR/.local"
 
-log "Cleaning APT cache"
+log "Čistím APT cache"
 sudo apt-get clean
 
 #######################################
-# Done
+# Hotovo
 #######################################
 echo
 echo "============================================================"
-echo "  Kiosk setup complete!"
+echo "  Kiosk inštalácia dokončená!"
 echo "============================================================"
-echo "  App mode:        $APP_MODE"
-echo "  URL:             $TARGET_URL"
-echo "  Display profile: $DISPLAY_PROFILE ($DISPLAY_MODE)"
-echo "  Rotation:        $EFFECTIVE_ROTATION"
-echo "  Connector:       $DISPLAY_CONNECTOR"
+echo "  WebVisu URL:     $TARGET_URL"
+echo "  Displej:         $DISPLAY_PROFILE (rotácia: $EFFECTIVE_ROTATION)"
 echo "  DSI port:        $DSI_PORT"
-echo "  Splash screen:   $INSTALL_SPLASH"
+echo "  Konektor:        $DISPLAY_CONNECTOR"
+echo "  Splash:          $INSTALL_SPLASH"
 echo "============================================================"
 echo
-echo "  Reboot to start kiosk mode:"
+echo "  Reštartuj Pi pre spustenie kiosk módu:"
 echo "    sudo reboot"
 echo
