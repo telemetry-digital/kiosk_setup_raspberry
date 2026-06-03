@@ -402,6 +402,14 @@ rm -f "\$HOME/.config/chromium/SingletonLock" \
       "\$HOME/.config/chromium/SingletonCookie" \
       "\$HOME/.config/chromium/SingletonSocket"
 
+# Wait until the target URL responds (max 120 s, check every 2 s)
+_waited=0
+while ! curl -fsS --max-time 2 "${TARGET_URL}" >/dev/null 2>&1; do
+  sleep 2
+  _waited=\$((_waited + 2))
+  [ "\$_waited" -ge 120 ] && break
+done
+
 "${CHROMIUM_BIN}" \\
   --kiosk \\
   --noerrdialogs \\
