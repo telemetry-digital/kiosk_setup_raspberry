@@ -16,14 +16,34 @@ set -euo pipefail
 # so SSH disconnect does not kill setup
 #######################################
 if [ -z "${TMUX:-}" ] && [ -z "${KIOSK_IN_TMUX:-}" ]; then
+  _SELF="$(realpath "$0")"
+  _TMUX_CMD="bash '$_SELF'"
+
+  _launch_tmux() {
+    exec tmux new-session -s kiosk-setup \
+      -e "KIOSK_IN_TMUX=1" \
+      -e "APP_MODE=${APP_MODE:-}" \
+      -e "URL_CODESYS=${URL_CODESYS:-}" \
+      -e "URL_HOMEASSISTANT=${URL_HOMEASSISTANT:-}" \
+      -e "URL_CUSTOM=${URL_CUSTOM:-}" \
+      -e "DISPLAY_PROFILE=${DISPLAY_PROFILE:-}" \
+      -e "DISPLAY_CONNECTOR=${DISPLAY_CONNECTOR:-}" \
+      -e "DSI_PORT=${DSI_PORT:-}" \
+      -e "ROTATION=${ROTATION:-}" \
+      -e "HIDE_CURSOR=${HIDE_CURSOR:-}" \
+      -e "RUN_UPDATE_UPGRADE=${RUN_UPDATE_UPGRADE:-}" \
+      -e "INSTALL_SPLASH=${INSTALL_SPLASH:-}" \
+      -e "SPLASH_IMAGE=${SPLASH_IMAGE:-}" \
+      -e "CHROMIUM_EXTRA_FLAGS=${CHROMIUM_EXTRA_FLAGS:-}" \
+      -e "BOOT_WAIT_SECONDS=${BOOT_WAIT_SECONDS:-}" \
+      "$_TMUX_CMD"
+  }
+
   if command -v tmux >/dev/null 2>&1; then
     echo "===> Relaunching inside tmux session 'kiosk-setup' (SSH-safe)"
     echo "     To reattach if disconnected: tmux attach -t kiosk-setup"
     echo
-    # Export all current env vars into the new tmux session
-    exec tmux new-session -s kiosk-setup \
-      -e "KIOSK_IN_TMUX=1" \
-      "env $(export -p | sed 's/declare -x //;s/export //' | tr '\n' ' ') bash $(realpath "$0")"
+    _launch_tmux
   else
     echo "===> tmux not found — installing it first"
     sudo apt-get update -qq
@@ -31,9 +51,7 @@ if [ -z "${TMUX:-}" ] && [ -z "${KIOSK_IN_TMUX:-}" ]; then
     echo "===> Relaunching inside tmux session 'kiosk-setup'"
     echo "     To reattach if disconnected: tmux attach -t kiosk-setup"
     echo
-    exec tmux new-session -s kiosk-setup \
-      -e "KIOSK_IN_TMUX=1" \
-      "env $(export -p | sed 's/declare -x //;s/export //' | tr '\n' ' ') bash $(realpath "$0")"
+    _launch_tmux
   fi
 fi
 
