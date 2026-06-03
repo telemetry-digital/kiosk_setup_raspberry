@@ -1,161 +1,149 @@
-# Raspberry Pi Kiosk Setup
+# Raspberry Pi Kiosk — CodeSys WebVisu
 
-Automated setup script for a fullscreen Wayland kiosk on **Raspberry Pi OS Lite** (Bookworm / Trixie).
+Automated setup script for a **fullscreen Chromium kiosk** running CodeSys WebVisu on **Raspberry Pi OS Lite** (Bookworm / Trixie).
 
-Designed for [telemetry.digital](https://telemetry.digital) hardware — official Raspberry Pi 7" Touch Display and Touch Display 2 — with Chromium running in kiosk mode on top of the **labwc** Wayland compositor.
+Built for [telemetry.digital](https://telemetry.digital) hardware — Raspberry Pi CM4/CM5 with DSI v2 touch displays, MCP2515 CAN bus, and labwc Wayland compositor.
 
 ---
 
-## Supported targets
+## What it sets up
+
+- ✅ **Chromium** in kiosk mode — fullscreen, no UI, auto-starts on boot
+- ✅ **labwc** Wayland compositor with greetd auto-login (no login screen)
+- ✅ **DSI display** — correct overlay, rotation and touch calibration
+- ✅ **CAN bus** — MCP2515 via SPI1 (two interfaces)
+- ✅ **Plymouth** boot splash screen
+- ✅ **SSH-safe** — re-launches inside tmux, disconnect won't abort install
+
+---
+
+## Supported hardware
+
+| Board | DSI port | Wayland output |
+|-------|----------|----------------|
+| Raspberry Pi CM4 / CM5 | DSI0 (`dsi0`) | `DSI-1` or `DSI-2` |
+| Raspberry Pi CM4 / CM5 | DSI1 (`dsi1`) | `DSI-2` or `DSI-1` |
+
+| Display | Profile | Rotation |
+|---------|---------|---------|
+| 7" DSI v2 (ili9881 controller) | `touch7` *(default)* | 270° |
+| Raspberry Pi Touch Display 2 | `touch2` | 90° |
 
 | OS | Codename | Status |
 |----|----------|--------|
 | Raspberry Pi OS Lite 64-bit | Bookworm | ✅ Tested |
 | Raspberry Pi OS Lite 64-bit | Trixie | ✅ Tested |
-| Debian-based systems | Other | ⚠️ Not guaranteed |
-
-| Display | Profile name |
-|---------|-------------|
-| Official 7" Touch Display (legacy DSI) | `touch7-legacy` |
-| Official Touch Display 2 | `touch2` |
-
----
-
-## SSH-safe installation
-
-The setup takes several minutes (system upgrade + package install). If your SSH connection drops mid-install, the process would normally hang or abort.
-
-Both scripts handle this automatically — `kiosk_setup.sh` detects if it is running outside tmux and **re-launches itself inside a new tmux session** called `kiosk-setup`. This means:
-
-- SSH can disconnect at any time without interrupting the install
-- If you lose connection, simply SSH back and reattach:
-
-```bash
-tmux attach -t kiosk-setup
-```
-
-tmux is installed automatically if not present.
 
 ---
 
 ## Quick start
 
-### One-liner install (recommended)
+### One-liner install
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/telemetry-digital/kiosk_setup_raspberry/main/install.sh)
 ```
+
+> Run as a regular user with `sudo` privileges — **never as root**.
 
 ### With custom options
 
 ```bash
-APP_MODE=homeassistant \
-URL_HOMEASSISTANT=http://192.168.1.100:8123 \
-DISPLAY_PROFILE=touch7-legacy \
+URL_CODESYS=http://192.168.1.10:8080/webvisu.htm \
+DISPLAY_PROFILE=touch7 \
+DSI_PORT=dsi0 \
 bash <(curl -fsSL https://raw.githubusercontent.com/telemetry-digital/kiosk_setup_raspberry/main/install.sh)
 ```
 
-### Manual install
+### SSH reconnect during install
+
+If your SSH connection drops, reattach to the running session:
 
 ```bash
-git clone https://github.com/telemetry-digital/kiosk_setup_raspberry.git
-cd kiosk_setup_raspberry
-APP_MODE=codesys bash kiosk_setup.sh
+tmux attach -t kiosk-setup
 ```
-
-> **Note:** Run as a regular user with `sudo` privileges, never as root.
 
 ---
 
 ## Configuration
 
-All options are set via environment variables. Defaults are shown below.
+All options are set via environment variables before the install command.
 
-### App mode
+### URL
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `APP_MODE` | `codesys` | Kiosk mode: `codesys` \| `homeassistant` \| `custom` |
-| `URL_CODESYS` | `http://localhost:8080/webvisu.htm` | URL used when `APP_MODE=codesys` |
-| `URL_HOMEASSISTANT` | `http://homeassistant.local:8123` | URL used when `APP_MODE=homeassistant` |
-| `URL_CUSTOM` | *(empty)* | URL used when `APP_MODE=custom` — **required** for custom mode |
+| `URL_CODESYS` | `http://localhost:8080/webvisu.htm` | CodeSys WebVisu address |
+| `URL_CUSTOM` | *(empty)* | If set, overrides `URL_CODESYS` |
 
 ### Display
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DISPLAY_PROFILE` | `touch7-legacy` | Display type: `touch7-legacy` \| `touch2` |
-| `DISPLAY_CONNECTOR` | `auto` | Wayland output name, e.g. `DSI-1`, `HDMI-A-1`. `auto` = auto-detect |
-| `DSI_PORT` | `dsi0` | DSI port for boot overlay: `dsi0` \| `dsi1` |
-| `ROTATION` | `auto` | Screen rotation: `auto` \| `normal` \| `90` \| `180` \| `270` |
-| `HIDE_CURSOR` | `yes` | Hide mouse cursor at startup: `yes` \| `no` |
-
-> `auto` rotation uses the display profile default: `normal` for `touch7-legacy`, `90` for `touch2`.
-
-### Browser
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `BOOT_WAIT_SECONDS` | `2` | Seconds to wait after Wayland starts before launching Chromium |
-| `CHROMIUM_EXTRA_FLAGS` | *(empty)* | Extra Chromium command-line flags |
+| Variable | Default | Options | Description |
+|----------|---------|---------|-------------|
+| `DISPLAY_PROFILE` | `touch7` | `touch7` \| `touch2` | Display type |
+| `DSI_PORT` | `dsi0` | `dsi0` \| `dsi1` | Physical DSI connector on the board |
+| `DISPLAY_CONNECTOR` | `auto` | `auto` \| `DSI-1` \| `DSI-2` \| `HDMI-A-1` | Wayland output name (`auto` = first detected) |
+| `ROTATION` | `auto` | `auto` \| `normal` \| `90` \| `180` \| `270` | Screen rotation (`auto` uses profile default) |
+| `HIDE_CURSOR` | `yes` | `yes` \| `no` | Hide mouse cursor at startup |
 
 ### System
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RUN_UPDATE_UPGRADE` | `yes` | Run `apt update && apt upgrade` before package install |
+| `RUN_UPDATE_UPGRADE` | `yes` | Run `apt update && apt upgrade` before install |
 | `INSTALL_SPLASH` | `yes` | Install Plymouth boot splash screen |
-| `SPLASH_IMAGE` | `splash_tt.png` | Splash image filename (must be next to `kiosk_setup.sh`) |
+| `BOOT_WAIT_SECONDS` | `2` | Seconds to wait after Wayland starts before launching Chromium |
+| `CHROMIUM_EXTRA_FLAGS` | *(empty)* | Extra Chromium command-line flags |
 
 ---
 
 ## Examples
 
-### CODESYS WebVisu on localhost (default)
+### Default — CodeSys on localhost
 
 ```bash
-bash install.sh
+bash <(curl -fsSL .../install.sh)
 ```
 
-### Home Assistant with Touch Display 2
+### CodeSys on a different machine
 
 ```bash
-APP_MODE=homeassistant \
+URL_CODESYS=http://192.168.1.10:8080/webvisu.htm \
+bash <(curl -fsSL .../install.sh)
+```
+
+### Touch Display 2 on DSI1
+
+```bash
 DISPLAY_PROFILE=touch2 \
-bash install.sh
-```
-
-### Custom URL on second DSI port, rotated 180°
-
-```bash
-APP_MODE=custom \
-URL_CUSTOM=http://192.168.1.50:3000 \
 DSI_PORT=dsi1 \
-DISPLAY_CONNECTOR=DSI-2 \
-ROTATION=180 \
-bash install.sh
+bash <(curl -fsSL .../install.sh)
 ```
 
-### Skip update and splash for faster re-install
+### Fast re-install (skip update and splash)
 
 ```bash
 RUN_UPDATE_UPGRADE=no \
 INSTALL_SPLASH=no \
-bash install.sh
+bash <(curl -fsSL .../install.sh)
 ```
 
 ---
 
-## What the script does
+## How it works
 
-1. **Validates** OS, user privileges, and all input parameters
-2. **Installs** `labwc`, `greetd`, `seatd`, `wlr-randr`, `wtype`, `plymouth`, `chromium`
-3. **Configures** `/boot/firmware/config.txt` — KMS overlay + DSI display overlay
-4. **Sets up greetd** to auto-start `labwc` as the current user (no login prompt)
-5. **Writes kiosk scripts** to `~/.local/bin/`:
-   - `kiosk-display-setup.sh` — sets resolution and rotation via `wlr-randr`
-   - `kiosk-browser-launch.sh` — launches Chromium in kiosk mode
-6. **Writes labwc config** to `~/.config/labwc/` — autostart + key bindings
+1. **Validates** OS, user, and all input parameters
+2. **Updates** the system and installs packages:
+   `labwc`, `greetd`, `seatd`, `wlr-randr`, `wtype`, `curl`, `plymouth`, `chromium`
+3. **Configures `/boot/firmware/config.txt`**:
+   - KMS overlay (`vc4-kms-v3d`)
+   - DSI display overlay with correct port and orientation
+   - CAN bus overlays (`spi1-3cs`, two × `mcp2515`)
+4. **Writes udev rule** for touch input calibration (270° matrix for Goodix touchscreen)
+5. **Configures greetd** to auto-start `labwc` without a login screen
+6. **Writes kiosk scripts** to `~/.local/bin/`:
+   - `kiosk-display-setup.sh` — detects Wayland socket and applies screen rotation
+   - `kiosk-browser-launch.sh` — waits for WebVisu to respond, then launches Chromium
 7. **Installs Plymouth** splash theme (optional)
 8. **Cleans up** APT cache and stale keyrings
 
@@ -165,87 +153,101 @@ bash install.sh
 
 ```
 ~/.config/labwc/
-├── autostart          # Runs display setup, cursor hide, browser launch
+├── autostart          # Starts display setup, hides cursor, launches browser
 └── rc.xml             # Key binding: Win+H to hide cursor
 
 ~/.local/bin/
-├── kiosk-display-setup.sh    # wlr-randr resolution/rotation
-└── kiosk-browser-launch.sh   # Chromium kiosk launcher
+├── kiosk-display-setup.sh    # Detects output, applies rotation via wlr-randr
+└── kiosk-browser-launch.sh   # Cleans Chromium locks, waits for server, launches
 ```
 
 ---
 
 ## Troubleshooting
 
+### Display is blank after reboot
+
+Check what outputs are available in Wayland:
+
+```bash
+WAYLAND_DISPLAY=wayland-0 wlr-randr
+```
+
+If DSI is not listed, the overlay in `config.txt` may be wrong. Verify:
+
+```bash
+grep dtoverlay /boot/firmware/config.txt
+```
+
+If the DSI output name does not match `auto` detection, set it explicitly:
+
+```bash
+DISPLAY_CONNECTOR=DSI-2 bash <(curl -fsSL .../install.sh)
+```
+
+### Chromium does not start
+
+Check the greetd/labwc log:
+
+```bash
+sudo systemctl status greetd
+journalctl -b 0 -u greetd --no-pager
+```
+
+Check if the Wayland socket exists:
+
+```bash
+ls /run/user/$(id -u)/wayland-*
+```
+
+Remove stale Chromium locks manually if needed:
+
+```bash
+rm -f ~/.config/chromium/SingletonLock \
+      ~/.config/chromium/SingletonCookie \
+      ~/.config/chromium/SingletonSocket
+sudo reboot
+```
+
+### WebVisu loads only after pressing refresh
+
+This means Chromium started before the CodeSys server was ready. The launch script already waits up to 120 s for the server. If it still happens, increase the wait time:
+
+```bash
+BOOT_WAIT_SECONDS=10 bash <(curl -fsSL .../install.sh)
+```
+
+### Wrong DSI port
+
+On CM4/CM5, physical DSI0 and DSI1 may map to `DSI-1` or `DSI-2` in Wayland depending on the board revision. Try the other port:
+
+```bash
+DSI_PORT=dsi1 bash <(curl -fsSL .../install.sh)
+```
+
 ### SSH disconnected during install
 
-Reattach to the running tmux session:
+Reattach:
 
 ```bash
 tmux attach -t kiosk-setup
 ```
 
-If the session no longer exists, the script already finished (or failed). Check the output with:
-
-```bash
-journalctl --no-pager | tail -50
-```
-
-### Chromium does not start
-
-Check the Wayland session log:
-
-```bash
-journalctl --user -u labwc -n 50
-```
-
-### Display stays black / wrong resolution
-
-Check which outputs are detected:
-
-```bash
-wlr-randr
-```
-
-Set `DISPLAY_CONNECTOR` explicitly if auto-detect picks the wrong output, e.g.:
-
-```bash
-DISPLAY_CONNECTOR=DSI-1 bash install.sh
-```
-
-### Wrong DSI port
-
-If you are using the second DSI connector on a CM4/CM5 board:
-
-```bash
-DSI_PORT=dsi1 DISPLAY_CONNECTOR=DSI-2 bash install.sh
-```
-
 ### Re-running the script
 
-The script is fully idempotent — safe to run again after changing variables. All config files are overwritten on each run.
-
-### Plymouth splash not showing
-
-Ensure `splash_tt.png` is in the same directory as `kiosk_setup.sh` before running. When using `install.sh`, it is downloaded automatically.
+The script is fully **idempotent** — safe to run again after changing options. Config files are overwritten, overlays are deduplicated.
 
 ---
 
-## Repository structure
+## Repository
 
 ```
 kiosk_setup_raspberry/
-├── install.sh         # One-liner downloader + launcher
+├── install.sh         # Downloads files and runs kiosk_setup.sh
 ├── kiosk_setup.sh     # Main setup script
 ├── splash_tt.png      # Plymouth boot splash image
 └── README.md
 ```
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE) for details.
 
 ---
 
